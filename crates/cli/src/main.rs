@@ -75,6 +75,7 @@ fn data(d: &FieldData) -> String {
             record: Some(id), ..
         } => format!("ref R{id}"),
         FieldData::Ref { record: None, .. } => "ref null".to_string(),
+        FieldData::String { text, .. } => format!("string {text:?}"),
     }
 }
 
@@ -162,5 +163,17 @@ mod tests {
             }),
             "ref null"
         );
+    }
+
+    #[test]
+    fn string_fields_show_quoted_text() {
+        let black = [0, 0, 0, 255];
+        let string = |text: &str| FieldData::String {
+            color: black,
+            text: text.to_string(),
+        };
+        assert_eq!(data(&string("OPENSPEC")), "string \"OPENSPEC\"");
+        assert_eq!(data(&string("AB\nCD")), "string \"AB\\nCD\"");
+        assert_eq!(data(&string("A\u{FFFD}")), "string \"A\u{FFFD}\"");
     }
 }

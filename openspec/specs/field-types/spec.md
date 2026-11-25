@@ -18,7 +18,7 @@ A field's type mark SHALL be read from the 3×3 pixel area directly above the to
 - **THEN** the field has no mark area and its type is `image`
 
 ### Requirement: Mark color and shape
-The mark color SHALL be the exact color of the top-middle pixel of the mark area. The mark's shape is the set of the 9 pixels that have exactly that color. A field's type SHALL be `float` when the shape is `###` / `##.` / `#..` (rows top to bottom, `#` = mark color). It SHALL be `counter` when the shape is `###` / `#..` / `###`, `bool` when the shape is `.#.` / `.##` / `.##`, and `ref` when the shape is `.#.` / `###` / `.#.`.
+The mark color SHALL be the exact color of the top-middle pixel of the mark area. The mark's shape is the set of the 9 pixels that have exactly that color. A field's type SHALL be `float` when the shape is `###` / `##.` / `#..` (rows top to bottom, `#` = mark color), `counter` for `###` / `#..` / `###`, `bool` for `.#.` / `.##` / `.##`, `ref` for `.#.` / `###` / `.#.`, and `string` for `.#.` / `#.#` / `#.#`.
 
 #### Scenario: Float mark
 - **WHEN** the mark area holds green (34,177,76) pixels in the shape `###` / `##.` / `#..`, and white pixels elsewhere
@@ -36,6 +36,10 @@ The mark color SHALL be the exact color of the top-middle pixel of the mark area
 - **WHEN** the mark area holds yellow (255,201,14) pixels in the shape `.#.` / `###` / `.#.`, and white pixels elsewhere
 - **THEN** the field's type is `ref` and its mark color is (255,201,14)
 
+#### Scenario: String mark
+- **WHEN** the mark area holds black (0,0,0) pixels in the shape `.#.` / `#.#` / `#.#`, and white pixels elsewhere
+- **THEN** the field's type is `string` and its mark color is (0,0,0)
+
 #### Scenario: Other pixels are not the mark color
 - **WHEN** the mark area holds a green `float` shape and the remaining pixels are a mix of white and black
 - **THEN** the field's type is `float`
@@ -45,7 +49,7 @@ The mark color SHALL be the exact color of the top-middle pixel of the mark area
 - **THEN** the field's type is `bool` and its mark color is pink
 
 ### Requirement: Default type is image
-A field's type SHALL be `image` when its mark area has no pixels, holds one color only, holds a shape other than the `float`, `counter`, `bool` and `ref` shapes, or uses the frame color `#BADBA1` as its mark color. An `image` field has no value.
+A field's type SHALL be `image` when its mark area has no pixels, holds one color only, holds a shape other than the `float`, `counter`, `bool`, `ref` and `string` shapes, or uses the frame color `#BADBA1` as its mark color. An `image` field has no value.
 
 #### Scenario: No mark
 - **WHEN** the mark area is all white

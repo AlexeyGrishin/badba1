@@ -21,6 +21,7 @@ fn example2_bool_fields() {
             .find(|f| f.outer == r)
             .unwrap_or_else(|| panic!("no field at {r:?}"))
             .data
+            .clone()
     };
     const PINK: [u8; 4] = [255, 174, 201, 255];
     assert_eq!(
@@ -51,7 +52,7 @@ fn example2_references() {
         .unwrap()
         .id;
 
-    let data = |r: Rect| layout.fields[field_id(r) - 1].data;
+    let data = |r: Rect| layout.fields[field_id(r) - 1].data.clone();
     // Yellow `+`, line ending at the target's bottom frame.
     assert_eq!(
         data(Rect::new(198, 26, 220, 43)),

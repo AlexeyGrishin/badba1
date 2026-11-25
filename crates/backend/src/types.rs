@@ -33,6 +33,13 @@ pub const REF_MARK: [[bool; 3]; 3] = [
     [false, true, false],
 ];
 
+/// Mark shape of a `string` field, rows top to bottom: `.#.`, `#.#`, `#.#`.
+pub const STRING_MARK: [[bool; 3]; 3] = [
+    [false, true, false],
+    [true, false, true],
+    [true, false, true],
+];
+
 /// The 3×3 area holding a field's type mark: directly above the top-right
 /// corner of the outer rectangle. `None` if there is no room above the field.
 pub fn mark_area(outer: Rect) -> Option<Rect> {
@@ -87,6 +94,11 @@ pub fn read_data(image: &RgbaImage, field: &Field) -> FieldData {
         FieldData::Ref {
             color,
             record: None,
+        }
+    } else if shape == STRING_MARK {
+        FieldData::String {
+            color,
+            text: crate::strings::read_text(image, field.inner, crate::font::builtin()),
         }
     } else {
         FieldData::Image
@@ -168,7 +180,7 @@ mod tests {
     fn data_of(img: &RgbaImage) -> FieldData {
         let layout = detect(img);
         assert_eq!(layout.fields.len(), 1);
-        layout.fields[0].data
+        layout.fields[0].data.clone()
     }
 
     // Mark location and shape
@@ -342,6 +354,33 @@ mod tests {
         let area = mark_area(OUTER).unwrap();
         img.put_pixel(area.left, area.top, BLACK);
         assert!(matches!(data_of(&img), FieldData::Bool { color, .. } if color == PINK.0));
+    }
+
+    #[test]
+    fn string_mark() {
+        let mut img = field_with_mark(STRING_MARK, BLACK);
+        // "HI" in the data area (15,15)-(24,24), one empty column apart.
+        let h = [(15, 15), (15, 16), (15, 17), (15, 18), (15, 19), (16, 17)];
+        let h = h
+            .iter()
+            .chain(&[(17, 15), (17, 16), (17, 17), (17, 18), (17, 19)]);
+        for &(x, y) in h {
+            img.put_pixel(x, y, BLACK);
+        }
+        for x in 19..=21 {
+            img.put_pixel(x, 15, BLACK);
+            img.put_pixel(x, 19, BLACK);
+        }
+        for y in 16..=18 {
+            img.put_pixel(20, y, BLACK);
+        }
+        assert_eq!(
+            data_of(&img),
+            FieldData::String {
+                color: BLACK.0,
+                text: "HI".to_string()
+            }
+        );
     }
 
     #[test]

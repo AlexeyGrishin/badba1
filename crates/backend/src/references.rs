@@ -216,8 +216,8 @@ mod tests {
     /// The target of A's reference.
     fn target(img: &RgbaImage) -> Option<usize> {
         let layout = crate::detect(img);
-        match layout.fields.iter().find(|f| f.outer == A).unwrap().data {
-            FieldData::Ref { record, .. } => record,
+        match &layout.fields.iter().find(|f| f.outer == A).unwrap().data {
+            FieldData::Ref { record, .. } => *record,
             other => panic!("expected a ref, got {other:?}"),
         }
     }

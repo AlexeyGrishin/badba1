@@ -52,7 +52,15 @@ fn example1_layout() {
     assert_eq!(links, expected);
 
     // Data types and values, read from the 3×3 marks.
-    let data = |r: Rect| layout.fields.iter().find(|f| f.outer == r).unwrap().data;
+    let data = |r: Rect| {
+        layout
+            .fields
+            .iter()
+            .find(|f| f.outer == r)
+            .unwrap()
+            .data
+            .clone()
+    };
     const GREEN: [u8; 4] = [34, 177, 76, 255];
     const RED: [u8; 4] = [237, 28, 36, 255];
     assert_eq!(

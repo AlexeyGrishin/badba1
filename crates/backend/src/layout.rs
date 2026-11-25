@@ -61,7 +61,7 @@ pub struct Field {
 }
 
 /// A field's data type and, for typed fields, its value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FieldData {
     /// No recognized type mark: the data area is just a bitmap.
     Image,
@@ -81,10 +81,14 @@ pub enum FieldData {
         color: [u8; 4],
         record: Option<usize>,
     },
+    /// Text written in the data area with the glyph font; lines joined by
+    /// `\n`, unknown glyphs as `\u{FFFD}`.
+    String { color: [u8; 4], text: String },
 }
 
 impl FieldData {
-    /// The type's name: `"image"`, `"float"`, `"counter"`, `"bool"` or `"ref"`.
+    /// The type's name: `"image"`, `"float"`, `"counter"`, `"bool"`, `"ref"`
+    /// or `"string"`.
     pub const fn type_name(&self) -> &'static str {
         match self {
             FieldData::Image => "image",
@@ -92,6 +96,7 @@ impl FieldData {
             FieldData::Counter { .. } => "counter",
             FieldData::Bool { .. } => "bool",
             FieldData::Ref { .. } => "ref",
+            FieldData::String { .. } => "string",
         }
     }
 
@@ -176,6 +181,14 @@ mod tests {
             }
             .type_name(),
             "bool"
+        );
+        assert_eq!(
+            FieldData::String {
+                color: c,
+                text: String::new()
+            }
+            .type_name(),
+            "string"
         );
         assert_eq!(
             FieldData::Ref {
