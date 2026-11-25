@@ -19,6 +19,13 @@ pub const FLOAT_MARK: [[bool; 3]; 3] = [
 pub const COUNTER_MARK: [[bool; 3]; 3] =
     [[true, true, true], [true, false, false], [true, true, true]];
 
+/// Mark shape of a `bool` field, rows top to bottom: `.#.`, `.##`, `.##`.
+pub const BOOL_MARK: [[bool; 3]; 3] = [
+    [false, true, false],
+    [false, true, true],
+    [false, true, true],
+];
+
 /// The 3×3 area holding a field's type mark: directly above the top-right
 /// corner of the outer rectangle. `None` if there is no room above the field.
 pub fn mark_area(outer: Rect) -> Option<Rect> {
@@ -31,7 +38,9 @@ pub fn read_data(image: &RgbaImage, field: &Field) -> FieldData {
     let Some(area) = mark_area(field.outer) else {
         return FieldData::Image;
     };
-    let color = image.get_pixel(area.left, area.top).0;
+    // The top-middle pixel belongs to every mark shape; the top-left does not
+    // (the `bool` mark leaves it empty).
+    let color = image.get_pixel(area.left + 1, area.top).0;
     if color == FRAME_COLOR.0 {
         return FieldData::Image;
     }
@@ -59,6 +68,11 @@ pub fn read_data(image: &RgbaImage, field: &Field) -> FieldData {
         FieldData::Counter {
             color,
             count: count_objects(image, field.inner, color),
+        }
+    } else if shape == BOOL_MARK {
+        FieldData::Bool {
+            color,
+            value: pixels(field.inner).any(|(x, y)| image.get_pixel(x, y).0 == color),
         }
     } else {
         FieldData::Image
@@ -116,6 +130,8 @@ mod tests {
     const RED: Rgba<u8> = Rgba([237, 28, 36, 255]);
     const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
     const BLACK: Rgba<u8> = Rgba([0, 0, 0, 255]);
+    const PINK: Rgba<u8> = Rgba([255, 174, 201, 255]);
+    const YELLOW: Rgba<u8> = Rgba([255, 201, 14, 255]);
 
     /// Outer rectangle of the test field: data area (15,15)-(24,24), 10×10.
     const OUTER: Rect = Rect::new(10, 10, 29, 29);
@@ -289,5 +305,66 @@ mod tests {
     fn counter_empty_area() {
         let img = field_with_mark(COUNTER_MARK, RED);
         assert_eq!(count_of(&img), 0);
+    }
+
+    // Bool mark and value
+
+    fn bool_of(img: &RgbaImage) -> bool {
+        match data_of(img) {
+            FieldData::Bool { value, .. } => value,
+            other => panic!("expected a bool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bool_mark() {
+        let img = field_with_mark(BOOL_MARK, PINK);
+        assert!(matches!(data_of(&img), FieldData::Bool { color, .. } if color == PINK.0));
+    }
+
+    #[test]
+    fn top_left_pixel_in_another_color() {
+        let mut img = field_with_mark(BOOL_MARK, PINK);
+        let area = mark_area(OUTER).unwrap();
+        img.put_pixel(area.left, area.top, BLACK);
+        assert!(matches!(data_of(&img), FieldData::Bool { color, .. } if color == PINK.0));
+    }
+
+    #[test]
+    fn plus_shaped_mark_is_image() {
+        let plus = [
+            [false, true, false],
+            [true, true, true],
+            [false, true, false],
+        ];
+        assert_eq!(data_of(&field_with_mark(plus, YELLOW)), FieldData::Image);
+    }
+
+    #[test]
+    fn bool_one_pixel_makes_it_true() {
+        let mut img = field_with_mark(BOOL_MARK, PINK);
+        img.put_pixel(20, 20, PINK);
+        assert!(bool_of(&img));
+    }
+
+    #[test]
+    fn bool_filled_area() {
+        let mut img = field_with_mark(BOOL_MARK, PINK);
+        fill(&mut img, Rect::new(16, 16, 23, 23), PINK);
+        assert!(bool_of(&img));
+    }
+
+    #[test]
+    fn bool_other_colors_only() {
+        let mut img = field_with_mark(BOOL_MARK, PINK);
+        fill(&mut img, Rect::new(15, 15, 18, 18), BLACK);
+        fill(&mut img, Rect::new(20, 20, 24, 24), RED);
+        assert!(!bool_of(&img));
+    }
+
+    #[test]
+    fn bool_empty_area() {
+        let img = field_with_mark(BOOL_MARK, PINK);
+        assert!(!bool_of(&img));
     }
 }

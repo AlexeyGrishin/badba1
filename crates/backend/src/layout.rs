@@ -73,15 +73,18 @@ pub enum FieldData {
     },
     /// The data area holds `count` separate objects in the mark color.
     Counter { color: [u8; 4], count: u64 },
+    /// True when at least one data-area pixel is the mark color.
+    Bool { color: [u8; 4], value: bool },
 }
 
 impl FieldData {
-    /// The type's name: `"image"`, `"float"` or `"counter"`.
+    /// The type's name: `"image"`, `"float"`, `"counter"` or `"bool"`.
     pub const fn type_name(&self) -> &'static str {
         match self {
             FieldData::Image => "image",
             FieldData::Float { .. } => "float",
             FieldData::Counter { .. } => "counter",
+            FieldData::Bool { .. } => "bool",
         }
     }
 
@@ -158,6 +161,14 @@ mod tests {
         assert_eq!(
             FieldData::Counter { color: c, count: 0 }.type_name(),
             "counter"
+        );
+        assert_eq!(
+            FieldData::Bool {
+                color: c,
+                value: true
+            }
+            .type_name(),
+            "bool"
         );
     }
 

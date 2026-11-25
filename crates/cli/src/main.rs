@@ -70,6 +70,7 @@ fn data(d: &FieldData) -> String {
         FieldData::Image => "image".to_string(),
         FieldData::Float { .. } => format!("float {:.2}%", d.percent().unwrap_or(0.0)),
         FieldData::Counter { count, .. } => format!("counter {count}"),
+        FieldData::Bool { value, .. } => format!("bool {value}"),
     }
 }
 
@@ -119,5 +120,24 @@ mod tests {
         assert!(text.contains("Links:\nRecords:\n"));
         assert!(text.ends_with("Records:\n  R1  F1\n"));
         assert!(text.contains("data (5,5)-(5,5) 1x1  image\n"));
+    }
+
+    #[test]
+    fn bool_fields_show_true_and_false() {
+        let pink = [255, 174, 201, 255];
+        assert_eq!(
+            data(&FieldData::Bool {
+                color: pink,
+                value: true
+            }),
+            "bool true"
+        );
+        assert_eq!(
+            data(&FieldData::Bool {
+                color: pink,
+                value: false
+            }),
+            "bool false"
+        );
     }
 }
