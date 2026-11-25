@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>badba1</title>
+<style>
+  :root {
+    --bg: #f4f4f4; --fg: #1f1f1f; --muted: #6b6b6b; --brace: #7a3e9d;
+    --key: #1f4e8c; --ref: #8a5a00; --err: #c62828; --card: #ffffff; --line: #dcdcdc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b1d; --fg: #e6e6e6; --muted: #9a9a9a; --brace: #c792ea;
+      --key: #82aaff; --ref: #ffcb6b; --err: #ff6b6b; --card: #242427; --line: #3a3a3e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px 16px;
+           align-items: center; padding: 10px 16px; background: var(--card);
+           border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  header label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  header select, header button { font: inherit; }
+  #status { color: var(--muted); }
+  main { padding: 16px; display: grid; gap: 16px; }
+  .record { background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+            padding: 12px 16px; font: 15px/1.7 ui-monospace, Consolas, monospace;
+            overflow-x: auto; }
+  .brace { color: var(--brace); font-weight: bold; }
+  .line { padding-left: 2ch; display: flex; align-items: flex-end; gap: 0; flex-wrap: wrap; }
+  .key { color: var(--key); white-space: pre; }
+  .ref { color: var(--ref); }
+  .line input[type=text], .line input[type=number], .line textarea {
+    font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px;
+    background: var(--bg); color: var(--fg); }
+  .line input[type=number] { width: 10ch; }
+  .line input[type=text], .line textarea { min-width: 20ch; text-transform: uppercase; }
+  .line input[type=checkbox] { width: 16px; height: 16px; margin: 0 4px 4px; }
+  canvas { border: 1px solid var(--line); cursor: crosshair; image-rendering: pixelated;
+           touch-action: none; background: #fff; }
+  .err { color: var(--err); margin-left: 1ch; font-family: system-ui, sans-serif; font-size: 13px; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>badba1</h1>
+  <label>Database <select id="db"></select></label>
+  <label>Per page
+    <select id="limit"><option>10</option><option selected>20</option><option>50</option></select>
+  </label>
+  <button id="prev" type="button">&larr; Prev</button>
+  <button id="next" type="button">Next &rarr;</button>
+  <span id="status"></span>
+</header>
+<main id="records"></main>
+<script>
+"use strict";
+const state = { db: null, offset: 0, limit: 20, total: 0, background: "#FFFFFF" };
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k in e) e[k] = v; else e.setAttribute(k, v);
+  }
+  for (const c of children) e.append(c);
+  return e;
+}
+
+// Calls the API; resolves to parsed JSON, or throws an Error with the API message.
+async function api(method, url, body, contentType = "application/json") {
+  const res = await fetch(url, { method, body, headers: body ? { "Content-Type": contentType } : {} });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON */ }
+  if (!res.ok) throw new Error(data && data.message ? data.message : `${res.status} ${res.statusText}`);
+  return data;
+}
+
+const fieldUrl = (rec, i) => `/api/dbs/${encodeURIComponent(state.db)}/records/${rec.id}/fields/${i}`;
+
+async function loadDbs() {
+  const { dbs } = await api("GET", "/api/dbs");
+  const sel = $("db");
+  sel.replaceChildren(...dbs.map((d) => el("option", { value: d, textContent: d })));
+  if (dbs.length === 0) {
+    $("records").replaceChildren(el("p", { class: "empty", textContent: "No databases in the folder." }));
+    return;
+  }
+  state.db = dbs[0];
+  await loadRecords();
+}
+
+async function loadRecords() {
+  const url = `/api/dbs/${encodeURIComponent(state.db)}/records?offset=${state.offset}&limit=${state.limit}`;
+  let page;
+  try { page = await api("GET", url); }
+  catch (e) { $("records").replaceChildren(el("p", { class: "err", textContent: e.message })); return; }
+  state.total = page.total;
+  state.background = page.background;
+  const last = Math.min(page.offset + page.records.length, page.total);
+  $("status").textContent = page.total
+    ? `records ${page.offset + 1}–${last} of ${page.total}` : "no records";
+  $("prev").disabled = state.offset === 0;
+  $("next").disabled = state.offset + state.limit >= state.total;
+  $("records").replaceChildren(...page.records.map(renderRecord));
+}
+
+function renderRecord(rec) {
+  const box = el("div", { class: "record" });
+  box.append(el("div", { class: "brace", textContent: "{" }));
+  box.append(el("div", { class: "line" },
+    el("span", { class: "key", textContent: "id: " }), JSON.stringify(rec.id), ","));
+  rec.fields.forEach((f, i) => box.append(renderField(rec, i, f)));
+  box.append(el("div", { class: "brace", textContent: "}" }));
+  return box;
+}
+
+function renderField(rec, i, f) {
+  const line = el("div", { class: "line" }, el("span", { class: "key", textContent: `${f.name}: ` }));
+  const err = el("span", { class: "err" });
+  const editor = makeEditor(rec, i, f, err);
+  line.append(...editor, ",", err);
+  return line;
+}
+
+// Saves a JSON value and calls `show` with the stored value, or reverts on error.
+async function saveValue(rec, i, value, show, err, stored) {
+  err.textContent = "";
+  try {
+    const field = await api("PUT", fieldUrl(rec, i), JSON.stringify({ value }));
+    stored.value = field.value;
+    show(field.value);
+  } catch (e) {
+    err.textContent = e.message;
+    show(stored.value);
+  }
+}
+
+function makeEditor(rec, i, f, err) {
+  const stored = { value: f.value };
+  switch (f.type) {
+    case "counter": {
+      const input = el("input", { type: "number", min: 0, step: 1, value: f.value });
+      input.addEventListener("change", () => {
+        const n = Number(input.value);
+        saveValue(rec, i, Number.isInteger(n) && n >= 0 ? n : input.value,
+          (v) => { input.value = v; }, err, stored);
+      });
+      return [input];
+    }
+    case "float": {
+      const show = (v) => { input.value = Number(v).toFixed(2); };
+      const input = el("input", { type: "number", min: 0, max: 100, step: 0.01 });
+      show(f.value);
+      input.addEventListener("change", () => saveValue(rec, i, Number(input.value), show, err, stored));
+      return [input, " %"];
+    }
+    case "bool": {
+      const input = el("input", { type: "checkbox", checked: f.value });
+      input.addEventListener("change", () =>
+        saveValue(rec, i, input.checked, (v) => { input.checked = v; }, err, stored));
+      return [input];
+    }
+    case "string": {
+      const multi = f.value.includes("\n");
+      const input = multi
+        ? el("textarea", { rows: f.value.split("\n").length, value: f.value })
+        : el("input", { type: "text", value: f.value });
+      input.addEventListener("change", () =>
+        saveValue(rec, i, input.value.toUpperCase(), (v) => { input.value = v; }, err, stored));
+      return [input];
+    }
+    case "ref":
+      return [el("span", { class: "ref", textContent: f.value === null ? "&null" : `&${JSON.stringify(f.value)}` })];
+    case "image":
+      return [makeCanvas(rec, i, f, err)];
+    default:
+      return [el("span", { textContent: f.type })];
+  }
+}
+
+// An image field: a zoomed pixel canvas; LMB draws black, RMB erases to the
+// background; the whole data area is saved when the button is released.
+function makeCanvas(rec, i, f, err) {
+  const zoom = Math.max(2, Math.floor(160 / f.width));
+  const canvas = el("canvas", { width: f.width, height: f.height });
+  canvas.style.width = `${f.width * zoom}px`;
+  canvas.style.height = `${f.height * zoom}px`;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+
+  const load = async () => {
+    const res = await fetch(`${fieldUrl(rec, i)}/image`);
+    if (!res.ok) { err.textContent = `cannot load image (${res.status})`; return; }
+    const bmp = await createImageBitmap(await res.blob());
+    ctx.clearRect(0, 0, f.width, f.height);
+    ctx.drawImage(bmp, 0, 0);
+  };
+  load();
+
+  let drawing = null; // { color, x, y }
+  const at = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [Math.floor((e.clientX - r.left) / r.width * f.width),
+            Math.floor((e.clientY - r.top) / r.height * f.height)];
+  };
+  const plot = (x, y) => {
+    if (x >= 0 && y >= 0 && x < f.width && y < f.height) ctx.fillRect(x, y, 1, 1);
+  };
+  const line = (x0, y0, x1, y1) => { // Bresenham, so fast strokes stay connected
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let e = dx + dy;
+    for (;;) {
+      plot(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * e;
+      if (e2 >= dy) { e += dy; x0 += sx; }
+      if (e2 <= dx) { e += dx; y0 += sy; }
+    }
+  };
+
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 && e.button !== 2) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* drawing still works without capture */ }
+    const [x, y] = at(e);
+    drawing = { x, y };
+    ctx.fillStyle = e.button === 0 ? "#000000" : state.background;
+    plot(x, y);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const [x, y] = at(e);
+    line(drawing.x, drawing.y, x, y);
+    drawing.x = x; drawing.y = y;
+  });
+  const finish = () => {
+    if (!drawing) return;
+    drawing = null;
+    err.textContent = "";
+    canvas.toBlob(async (blob) => {
+      try { await api("PUT", `${fieldUrl(rec, i)}/image`, blob, "image/png"); }
+      catch (e) { err.textContent = e.message; await load(); }
+    }, "image/png");
+  };
+  canvas.addEventListener("pointerup", finish);
+  canvas.addEventListener("pointercancel", finish);
+  return canvas;
+}
+
+$("db").addEventListener("change", () => { state.db = $("db").value; state.offset = 0; loadRecords(); });
+$("limit").addEventListener("change", () => { state.limit = Number($("limit").value); state.offset = 0; loadRecords(); });
+$("prev").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); loadRecords(); });
+$("next").addEventListener("click", () => { state.offset += state.limit; loadRecords(); });
+
+loadDbs().catch((e) => $("records").replaceChildren(el("p", { class: "err", textContent: e.message })));
+</script>
+</body>
+</html>
