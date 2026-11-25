@@ -44,11 +44,13 @@ pub fn detect(image: &RgbaImage) -> Layout {
         field.data = crate::types::read_data(image, field);
     }
     let links = find_links(&grid, &fields);
+    let records = crate::records::records(&fields, &links);
     Layout {
         width: grid.width,
         height: grid.height,
         fields,
         links,
+        records,
     }
 }
 

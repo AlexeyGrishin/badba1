@@ -79,4 +79,31 @@ fn example1_layout() {
     );
     assert_eq!(data(Rect::new(35, 23, 77, 52)), FieldData::Image);
     assert_eq!(data(Rect::new(72, 70, 107, 97)), FieldData::Image);
+
+    // Records: fields as outer rectangles, in record order.
+    let records: Vec<Vec<Rect>> = layout
+        .records
+        .iter()
+        .map(|r| {
+            r.fields
+                .iter()
+                .map(|&id| layout.fields[id - 1].outer)
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        records,
+        vec![
+            vec![
+                Rect::new(101, 22, 137, 47),
+                Rect::new(156, 22, 193, 50),
+                Rect::new(35, 23, 77, 52),
+            ],
+            vec![Rect::new(130, 69, 167, 97), Rect::new(72, 70, 107, 97)],
+        ]
+    );
+    assert_eq!(
+        layout.records.iter().map(|r| r.id).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
 }

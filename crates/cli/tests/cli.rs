@@ -24,7 +24,7 @@ fn reference_image() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     let lines: Vec<&str> = stdout.lines().collect();
     assert!(
-        lines[0].ends_with(": 539x348, 5 fields, 3 links"),
+        lines[0].ends_with(": 539x348, 5 fields, 3 links, 2 records"),
         "{stdout}"
     );
     assert!(
@@ -45,7 +45,9 @@ fn reference_image() {
     assert!(field_line("F4").ends_with("  counter 3"), "{stdout}");
     assert!(field_line("F5").ends_with("  image"), "{stdout}");
     assert!(
-        stdout.ends_with("Links:\n  L1  F1 - F2\n  L2  F1 - F3\n  L3  F4 - F5\n"),
+        stdout.ends_with(
+            "Links:\n  L1  F1 - F2\n  L2  F1 - F3\n  L3  F4 - F5\nRecords:\n  R1  F1, F2, F3\n  R2  F4, F5\n"
+        ),
         "{stdout}"
     );
 }

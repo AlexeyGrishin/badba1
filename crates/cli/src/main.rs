@@ -29,11 +29,12 @@ fn main() -> ExitCode {
 /// Formats a layout as the text the tool prints.
 fn render(path: &str, layout: &Layout) -> String {
     let mut out = format!(
-        "{path}: {}x{}, {} fields, {} links\n",
+        "{path}: {}x{}, {} fields, {} links, {} records\n",
         layout.width,
         layout.height,
         layout.fields.len(),
-        layout.links.len()
+        layout.links.len(),
+        layout.records.len()
     );
     out.push_str("Fields:\n");
     for f in &layout.fields {
@@ -54,6 +55,11 @@ fn render(path: &str, layout: &Layout) -> String {
     for l in &layout.links {
         let ends: Vec<String> = l.fields.iter().map(|id| format!("F{id}")).collect();
         out.push_str(&format!("  L{}  {}\n", l.id, ends.join(" - ")));
+    }
+    out.push_str("Records:\n");
+    for r in &layout.records {
+        let fields: Vec<String> = r.fields.iter().map(|id| format!("F{id}")).collect();
+        out.push_str(&format!("  R{}  {}\n", r.id, fields.join(", ")));
     }
     out
 }
@@ -83,7 +89,7 @@ fn rect(r: Rect) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use backend::{Borders, Field};
+    use backend::{Borders, Field, Record};
 
     #[test]
     fn no_links_prints_no_link_lines() {
@@ -103,10 +109,15 @@ mod tests {
                 data: FieldData::Image,
             }],
             links: vec![],
+            records: vec![Record {
+                id: 1,
+                fields: vec![1],
+            }],
         };
         let text = render("x.png", &layout);
-        assert!(text.starts_with("x.png: 10x10, 1 fields, 0 links\n"));
-        assert!(text.ends_with("Links:\n"));
+        assert!(text.starts_with("x.png: 10x10, 1 fields, 0 links, 1 records\n"));
+        assert!(text.contains("Links:\nRecords:\n"));
+        assert!(text.ends_with("Records:\n  R1  F1\n"));
         assert!(text.contains("data (5,5)-(5,5) 1x1  image\n"));
     }
 }

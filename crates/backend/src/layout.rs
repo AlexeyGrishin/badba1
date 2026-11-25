@@ -117,6 +117,17 @@ pub struct Layout {
     pub fields: Vec<Field>,
     /// Links, ordered by id.
     pub links: Vec<Link>,
+    /// Records (groups of linked fields), ordered by id.
+    pub records: Vec<Record>,
+}
+
+/// A set of fields connected through links.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Record {
+    /// Number of the record, starting at 1, in order of its first field.
+    pub id: usize,
+    /// Ids of the record's fields, in record order.
+    pub fields: Vec<usize>,
 }
 
 #[cfg(test)]
