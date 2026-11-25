@@ -18,3 +18,6 @@ Thumbs.db
 
 # Machine-local Claude Code settings
 .claude/settings.local.json
+
+# Local images for manual testing
+/db/

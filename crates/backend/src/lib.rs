@@ -1,18 +1,14 @@
-//! Backend library crate.
+//! Backend of badba1, an experimental database that keeps its data in an image.
 //!
-//! Placeholder contents; real backend functionality will replace them.
+//! Fields are rectangular data areas framed in the color `#BADBA1`. Links are
+//! gap-free strokes in the same color that join two or more fields.
+//! [`analyze_png`] reads a PNG file and returns its [`Layout`];
+//! [`detect`] does the same for an image already in memory.
 
-/// Returns the name of this crate.
-pub fn name() -> &'static str {
-    env!("CARGO_PKG_NAME")
-}
+mod detect;
+mod layout;
+mod load;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn name_is_backend() {
-        assert_eq!(name(), "backend");
-    }
-}
+pub use detect::{FRAME_COLOR, detect, is_frame_color};
+pub use layout::{Borders, Field, Layout, Link, Rect};
+pub use load::{Error, analyze_png};
