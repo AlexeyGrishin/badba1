@@ -1,0 +1,20 @@
+# Cargo build output
+/target/
+
+# rustfmt backups
+**/*.rs.bk
+
+# MSVC debug symbols
+*.pdb
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Machine-local Claude Code settings
+.claude/settings.local.json
