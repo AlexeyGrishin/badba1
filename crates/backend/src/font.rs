@@ -147,9 +147,15 @@ impl Font {
         &self.chars
     }
 
-    /// Every glyph form, main and alternate, with its character.
+    /// Every glyph form, main and alternate, with its character. A character's
+    /// main form comes before its alternates.
     pub fn forms(&self) -> &[(char, GlyphMask)] {
         &self.forms
+    }
+
+    /// The main (first-row) glyph form of `ch`, if the font has it.
+    pub fn main_form(&self, ch: char) -> Option<GlyphMask> {
+        self.forms.iter().find(|(c, _)| *c == ch).map(|&(_, m)| m)
     }
 }
 

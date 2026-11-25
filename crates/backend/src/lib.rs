@@ -20,6 +20,7 @@ mod records;
 mod references;
 mod strings;
 mod types;
+mod write;
 
 pub use detect::{FRAME_COLOR, detect, is_frame_color};
 pub use font::{Font, FontError, GlyphMask, builtin as builtin_font};
@@ -29,3 +30,4 @@ pub use records::records;
 pub use references::{REF_REACH, resolve as resolve_references};
 pub use strings::{UNKNOWN_GLYPH, read_text};
 pub use types::{BOOL_MARK, COUNTER_MARK, FLOAT_MARK, REF_MARK, STRING_MARK, mark_area};
+pub use write::{WriteError, WriteValue, write_field};
