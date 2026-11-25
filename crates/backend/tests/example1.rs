@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use backend::{Borders, Rect, analyze_png};
+use backend::{Borders, FieldData, Rect, analyze_png};
 
 fn example1() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/example1.png")
@@ -50,4 +50,33 @@ fn example1_layout() {
     ];
     expected.sort();
     assert_eq!(links, expected);
+
+    // Data types and values, read from the 3×3 marks.
+    let data = |r: Rect| layout.fields.iter().find(|f| f.outer == r).unwrap().data;
+    const GREEN: [u8; 4] = [34, 177, 76, 255];
+    const RED: [u8; 4] = [237, 28, 36, 255];
+    assert_eq!(
+        data(Rect::new(101, 22, 137, 47)),
+        FieldData::Counter {
+            color: GREEN,
+            count: 5
+        }
+    );
+    assert_eq!(
+        data(Rect::new(156, 22, 193, 50)),
+        FieldData::Float {
+            color: GREEN,
+            filled: 196,
+            total: 532
+        }
+    );
+    assert_eq!(
+        data(Rect::new(130, 69, 167, 97)),
+        FieldData::Counter {
+            color: RED,
+            count: 3
+        }
+    );
+    assert_eq!(data(Rect::new(35, 23, 77, 52)), FieldData::Image);
+    assert_eq!(data(Rect::new(72, 70, 107, 97)), FieldData::Image);
 }

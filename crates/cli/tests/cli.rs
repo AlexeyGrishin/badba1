@@ -29,10 +29,21 @@ fn reference_image() {
     );
     assert!(
         stdout.contains(
-            "  F1  outer (101,22)-(137,47) 37x26  border t5 r5 b5 l5  data (106,27)-(132,42) 27x16\n"
+            "  F1  outer (101,22)-(137,47) 37x26  border t5 r5 b5 l5  data (106,27)-(132,42) 27x16  counter 5\n"
         ),
         "{stdout}"
     );
+    let field_line = |id: &str| {
+        lines
+            .iter()
+            .find(|l| l.starts_with(&format!("  {id}  ")))
+            .copied()
+            .unwrap_or_else(|| panic!("no {id} line in {stdout}"))
+    };
+    assert!(field_line("F2").ends_with("  float 36.84%"), "{stdout}");
+    assert!(field_line("F3").ends_with(" 33x20  image"), "{stdout}");
+    assert!(field_line("F4").ends_with("  counter 3"), "{stdout}");
+    assert!(field_line("F5").ends_with("  image"), "{stdout}");
     assert!(
         stdout.ends_with("Links:\n  L1  F1 - F2\n  L2  F1 - F3\n  L3  F4 - F5\n"),
         "{stdout}"

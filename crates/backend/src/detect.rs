@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use image::{Rgba, RgbaImage};
 
-use crate::layout::{Borders, Field, Layout, Link, Rect};
+use crate::layout::{Borders, Field, FieldData, Layout, Link, Rect};
 
 /// The frame color, `#BADBA1`, fully opaque. Only exact matches count.
 pub const FRAME_COLOR: Rgba<u8> = Rgba([0xBA, 0xDB, 0xA1, 0xFF]);
@@ -41,6 +41,7 @@ pub fn detect(image: &RgbaImage) -> Layout {
     fields.sort_by_key(|f| (f.outer.top, f.outer.left));
     for (i, field) in fields.iter_mut().enumerate() {
         field.id = i + 1;
+        field.data = crate::types::read_data(image, field);
     }
     let links = find_links(&grid, &fields);
     Layout {
@@ -197,6 +198,7 @@ fn frame_around(grid: &Grid, inner: Rect) -> Option<Field> {
         outer,
         inner,
         borders,
+        data: FieldData::Image,
     })
 }
 

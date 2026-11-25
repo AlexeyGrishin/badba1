@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use backend::{Layout, Rect};
+use backend::{FieldData, Layout, Rect};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,14 +39,15 @@ fn render(path: &str, layout: &Layout) -> String {
     for f in &layout.fields {
         let b = f.borders;
         out.push_str(&format!(
-            "  F{}  outer {}  border t{} r{} b{} l{}  data {}\n",
+            "  F{}  outer {}  border t{} r{} b{} l{}  data {}  {}\n",
             f.id,
             rect(f.outer),
             b.top,
             b.right,
             b.bottom,
             b.left,
-            rect(f.inner)
+            rect(f.inner),
+            data(&f.data)
         ));
     }
     out.push_str("Links:\n");
@@ -55,6 +56,15 @@ fn render(path: &str, layout: &Layout) -> String {
         out.push_str(&format!("  L{}  {}\n", l.id, ends.join(" - ")));
     }
     out
+}
+
+/// The field's type, followed by its value for `float` and `counter` fields.
+fn data(d: &FieldData) -> String {
+    match d {
+        FieldData::Image => "image".to_string(),
+        FieldData::Float { .. } => format!("float {:.2}%", d.percent().unwrap_or(0.0)),
+        FieldData::Counter { count, .. } => format!("counter {count}"),
+    }
 }
 
 /// `(left,top)-(right,bottom) WxH`
@@ -90,11 +100,13 @@ mod tests {
                     bottom: 1,
                     left: 1,
                 },
+                data: FieldData::Image,
             }],
             links: vec![],
         };
         let text = render("x.png", &layout);
         assert!(text.starts_with("x.png: 10x10, 1 fields, 0 links\n"));
         assert!(text.ends_with("Links:\n"));
+        assert!(text.contains("data (5,5)-(5,5) 1x1  image\n"));
     }
 }

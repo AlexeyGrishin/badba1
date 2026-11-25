@@ -56,6 +56,45 @@ pub struct Field {
     pub inner: Rect,
     /// Frame thickness on each side.
     pub borders: Borders,
+    /// The field's data type and value, read from its type mark.
+    pub data: FieldData,
+}
+
+/// A field's data type and, for typed fields, its value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FieldData {
+    /// No recognized type mark: the data area is just a bitmap.
+    Image,
+    /// `filled` of the data area's `total` pixels are the mark color.
+    Float {
+        color: [u8; 4],
+        filled: u64,
+        total: u64,
+    },
+    /// The data area holds `count` separate objects in the mark color.
+    Counter { color: [u8; 4], count: u64 },
+}
+
+impl FieldData {
+    /// The type's name: `"image"`, `"float"` or `"counter"`.
+    pub const fn type_name(&self) -> &'static str {
+        match self {
+            FieldData::Image => "image",
+            FieldData::Float { .. } => "float",
+            FieldData::Counter { .. } => "counter",
+        }
+    }
+
+    /// For a float field, the filled share of the data area in percent (0 to 100).
+    pub fn percent(&self) -> Option<f64> {
+        match *self {
+            FieldData::Float { filled, total, .. } if total > 0 => {
+                Some(100.0 * filled as f64 / total as f64)
+            }
+            FieldData::Float { .. } => Some(0.0),
+            _ => None,
+        }
+    }
 }
 
 /// A gap-free stroke in the frame color that connects two or more fields.
@@ -90,6 +129,44 @@ mod tests {
         assert_eq!(r.width(), 37);
         assert_eq!(r.height(), 26);
         assert_eq!(Rect::new(5, 5, 5, 5).width(), 1);
+    }
+
+    #[test]
+    fn type_names() {
+        let c = [0, 0, 0, 255];
+        assert_eq!(FieldData::Image.type_name(), "image");
+        assert_eq!(
+            FieldData::Float {
+                color: c,
+                filled: 0,
+                total: 1
+            }
+            .type_name(),
+            "float"
+        );
+        assert_eq!(
+            FieldData::Counter { color: c, count: 0 }.type_name(),
+            "counter"
+        );
+    }
+
+    #[test]
+    fn float_percent() {
+        let c = [0, 0, 0, 255];
+        let pct = |filled, total| {
+            FieldData::Float {
+                color: c,
+                filled,
+                total,
+            }
+            .percent()
+            .unwrap()
+        };
+        assert_eq!(pct(0, 532), 0.0);
+        assert!((pct(196, 532) - 36.842).abs() < 0.001);
+        assert_eq!(pct(532, 532), 100.0);
+        assert_eq!(FieldData::Image.percent(), None);
+        assert_eq!(FieldData::Counter { color: c, count: 3 }.percent(), None);
     }
 
     #[test]
