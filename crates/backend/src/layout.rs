@@ -75,16 +75,23 @@ pub enum FieldData {
     Counter { color: [u8; 4], count: u64 },
     /// True when at least one data-area pixel is the mark color.
     Bool { color: [u8; 4], value: bool },
+    /// A reference to another record, traced along a line in the mark color.
+    /// `record` is the target record's id, or `None` for a null reference.
+    Ref {
+        color: [u8; 4],
+        record: Option<usize>,
+    },
 }
 
 impl FieldData {
-    /// The type's name: `"image"`, `"float"`, `"counter"` or `"bool"`.
+    /// The type's name: `"image"`, `"float"`, `"counter"`, `"bool"` or `"ref"`.
     pub const fn type_name(&self) -> &'static str {
         match self {
             FieldData::Image => "image",
             FieldData::Float { .. } => "float",
             FieldData::Counter { .. } => "counter",
             FieldData::Bool { .. } => "bool",
+            FieldData::Ref { .. } => "ref",
         }
     }
 
@@ -169,6 +176,14 @@ mod tests {
             }
             .type_name(),
             "bool"
+        );
+        assert_eq!(
+            FieldData::Ref {
+                color: c,
+                record: None
+            }
+            .type_name(),
+            "ref"
         );
     }
 

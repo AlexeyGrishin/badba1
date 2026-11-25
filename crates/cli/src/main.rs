@@ -71,6 +71,10 @@ fn data(d: &FieldData) -> String {
         FieldData::Float { .. } => format!("float {:.2}%", d.percent().unwrap_or(0.0)),
         FieldData::Counter { count, .. } => format!("counter {count}"),
         FieldData::Bool { value, .. } => format!("bool {value}"),
+        FieldData::Ref {
+            record: Some(id), ..
+        } => format!("ref R{id}"),
+        FieldData::Ref { record: None, .. } => "ref null".to_string(),
     }
 }
 
@@ -138,6 +142,25 @@ mod tests {
                 value: false
             }),
             "bool false"
+        );
+    }
+
+    #[test]
+    fn ref_fields_show_target_or_null() {
+        let yellow = [255, 201, 14, 255];
+        assert_eq!(
+            data(&FieldData::Ref {
+                color: yellow,
+                record: Some(2)
+            }),
+            "ref R2"
+        );
+        assert_eq!(
+            data(&FieldData::Ref {
+                color: yellow,
+                record: None
+            }),
+            "ref null"
         );
     }
 }

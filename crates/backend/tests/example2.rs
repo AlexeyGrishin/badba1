@@ -38,3 +38,35 @@ fn example2_bool_fields() {
         }
     );
 }
+
+#[test]
+fn example2_references() {
+    let layout = analyze_png(&example2()).expect("testdata/example2.png should load");
+    let field_id = |r: Rect| layout.fields.iter().find(|f| f.outer == r).unwrap().id;
+    let target_field = field_id(Rect::new(250, 23, 280, 52));
+    let target_record = layout
+        .records
+        .iter()
+        .find(|r| r.fields.contains(&target_field))
+        .unwrap()
+        .id;
+
+    let data = |r: Rect| layout.fields[field_id(r) - 1].data;
+    // Yellow `+`, line ending at the target's bottom frame.
+    assert_eq!(
+        data(Rect::new(198, 26, 220, 43)),
+        FieldData::Ref {
+            color: [255, 201, 14, 255],
+            record: Some(target_record)
+        }
+    );
+    // Purple `+`, line crossed by the yellow one (1px gap), ending at the
+    // target's left frame.
+    assert_eq!(
+        data(Rect::new(213, 74, 234, 93)),
+        FieldData::Ref {
+            color: [163, 73, 164, 255],
+            record: Some(target_record)
+        }
+    );
+}

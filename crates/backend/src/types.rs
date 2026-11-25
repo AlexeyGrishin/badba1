@@ -26,6 +26,13 @@ pub const BOOL_MARK: [[bool; 3]; 3] = [
     [false, true, true],
 ];
 
+/// Mark shape of a `ref` field, rows top to bottom: `.#.`, `###`, `.#.`.
+pub const REF_MARK: [[bool; 3]; 3] = [
+    [false, true, false],
+    [true, true, true],
+    [false, true, false],
+];
+
 /// The 3×3 area holding a field's type mark: directly above the top-right
 /// corner of the outer rectangle. `None` if there is no room above the field.
 pub fn mark_area(outer: Rect) -> Option<Rect> {
@@ -73,6 +80,13 @@ pub fn read_data(image: &RgbaImage, field: &Field) -> FieldData {
         FieldData::Bool {
             color,
             value: pixels(field.inner).any(|(x, y)| image.get_pixel(x, y).0 == color),
+        }
+    } else if shape == REF_MARK {
+        // The data area is ignored; the target is resolved later, once records
+        // are known (see `references::resolve`).
+        FieldData::Ref {
+            color,
+            record: None,
         }
     } else {
         FieldData::Image
@@ -331,13 +345,30 @@ mod tests {
     }
 
     #[test]
-    fn plus_shaped_mark_is_image() {
+    fn plus_shaped_mark_is_ref() {
         let plus = [
             [false, true, false],
             [true, true, true],
             [false, true, false],
         ];
-        assert_eq!(data_of(&field_with_mark(plus, YELLOW)), FieldData::Image);
+        assert_eq!(plus, REF_MARK);
+        assert_eq!(
+            data_of(&field_with_mark(plus, YELLOW)),
+            FieldData::Ref {
+                color: YELLOW.0,
+                record: None
+            }
+        );
+    }
+
+    #[test]
+    fn ref_data_area_is_ignored() {
+        let empty = field_with_mark(REF_MARK, YELLOW);
+        let mut drawn = empty.clone();
+        fill(&mut drawn, Rect::new(15, 15, 19, 19), YELLOW);
+        fill(&mut drawn, Rect::new(20, 20, 24, 24), BLACK);
+        assert_eq!(data_of(&drawn), data_of(&empty));
+        assert_eq!(data_of(&drawn).type_name(), "ref");
     }
 
     #[test]

@@ -15,7 +15,7 @@ Running `cli <path>` with the path of a PNG file SHALL print a summary line with
 - **AND** the command exits with status 0
 
 ### Requirement: Field listing
-For every field, the output SHALL show the field's number, its outer rectangle as left, top, right and bottom pixel coordinates, its outer width and height, its border thickness on each side (top, right, bottom, left), its data-area rectangle and size, and its data type. For `float` fields it SHALL also show the value as a percentage with two decimals, for `counter` fields the count, and for `bool` fields `true` or `false`. `image` fields show no value. Fields are listed in number order.
+For every field, in number order, the output SHALL show its number, outer rectangle (left, top, right, bottom) with width and height, border thickness per side (top, right, bottom, left), data-area rectangle and size, and data type. Typed fields add their value: `float` as a percentage with two decimals, `counter` as the count, `bool` as `true` or `false`, `ref` as `R<number>` or `null`. `image` fields have no value.
 
 #### Scenario: Field line content
 - **WHEN** an image has a field with outer rectangle (101,22)–(137,47), borders of 5 on every side and data area (106,27)–(132,42)
@@ -32,6 +32,10 @@ For every field, the output SHALL show the field's number, its outer rectangle a
 #### Scenario: Bool field
 - **WHEN** a field is a `bool` with value true, and another is a `bool` with value false
 - **THEN** their lines end with `bool true` and `bool false`, respectively
+
+#### Scenario: Ref field
+- **WHEN** a field is a `ref` whose target is record 2, and another is a `ref` with a null reference
+- **THEN** their lines end with `ref R2` and `ref null`, respectively
 
 #### Scenario: Image field
 - **WHEN** a field is an `image` with a 33×20 data area

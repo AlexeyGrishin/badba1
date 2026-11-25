@@ -45,6 +45,7 @@ pub fn detect(image: &RgbaImage) -> Layout {
     }
     let links = find_links(&grid, &fields);
     let records = crate::records::records(&fields, &links);
+    crate::references::resolve(image, &mut fields, &records);
     Layout {
         width: grid.width,
         height: grid.height,
