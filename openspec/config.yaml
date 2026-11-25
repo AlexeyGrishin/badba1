@@ -1,5 +1,11 @@
 schema: spec-driven
 
+context: |
+  badba1 is an experimental database that holds its data in image format, so the
+  whole database can be both read and edited with a regular image editor (such as
+  MS Paint) and through an API (CLI, REST, possibly others).
+  It is not intended for real-world/production use.
+
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.
 # Include constraints an agent cannot infer by reading the code.
