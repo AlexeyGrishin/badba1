@@ -1,12 +1,16 @@
 //! REST API handlers.
 //!
-//! Every request re-reads the database file and re-runs detection. Writes hold
-//! a lock for their whole load → write → save sequence and save through a
-//! temporary file and a rename, so a database is never half-written.
+//! A database is read and analyzed once, when a request first names it, and is
+//! then served from memory for the rest of the run. Changes made to the file by
+//! other programs are not seen until the server restarts. Each database has its
+//! own read/write lock: reads run in parallel, and a write updates memory and
+//! then saves through a temporary file and a rename, so a database is never
+//! half-written. A write whose save fails is undone in memory.
 
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use axum::Json;
 use axum::Router;
@@ -16,10 +20,9 @@ use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use backend::{Field, FieldData, Layout, WriteError, WriteValue, detect, write_field};
-use image::RgbaImage;
+use image::{GenericImage, RgbaImage};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 /// The web page, served at `/`.
 const INDEX_HTML: &str = include_str!("../ui/index.html");
@@ -30,7 +33,74 @@ const MAX_LIMIT: usize = 1000;
 
 struct AppState {
     db_dir: PathBuf,
-    write_lock: Mutex<()>,
+    /// Databases by id. An entry holds `None` until its first successful load.
+    dbs: Mutex<HashMap<String, Slot>>,
+}
+
+/// A database held in memory.
+struct Db {
+    /// The file it was loaded from, and is saved to.
+    path: PathBuf,
+    image: RgbaImage,
+    layout: Layout,
+    /// Record ids, indexed by record number (see [`record_ids`]).
+    ids: Vec<String>,
+}
+
+type Slot = Arc<RwLock<Option<Db>>>;
+
+impl AppState {
+    /// The slot of database `id`. A slot is created only for a valid id whose
+    /// file exists; once created it stays, even if the file goes away.
+    fn slot(&self, id: &str) -> ApiResult<Slot> {
+        let mut dbs = self.dbs.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(slot) = dbs.get(id) {
+            return Ok(slot.clone());
+        }
+        db_path(&self.db_dir, id)?;
+        Ok(dbs.entry(id.to_string()).or_default().clone())
+    }
+}
+
+/// Reads and analyzes database `id` from its file.
+fn load_db(dir: &Path, id: &str) -> ApiResult<Db> {
+    let path = db_path(dir, id)?;
+    let image = load(&path)?;
+    let layout = detect(&image);
+    let ids = record_ids(&layout);
+    Ok(Db {
+        path,
+        image,
+        layout,
+        ids,
+    })
+}
+
+/// Runs `f` on database `id`, loading it first if this is its first use.
+/// Concurrent first uses load it once; a failed load is not remembered.
+fn with_db<T>(state: &AppState, id: &str, f: impl FnOnce(&Db) -> ApiResult<T>) -> ApiResult<T> {
+    let slot = state.slot(id)?;
+    {
+        let guard = slot.read().unwrap_or_else(PoisonError::into_inner);
+        if let Some(db) = guard.as_ref() {
+            return f(db);
+        }
+    }
+    with_db_mut(state, id, |db| f(db))
+}
+
+/// Like [`with_db`], with exclusive access for writing.
+fn with_db_mut<T>(
+    state: &AppState,
+    id: &str,
+    f: impl FnOnce(&mut Db) -> ApiResult<T>,
+) -> ApiResult<T> {
+    let slot = state.slot(id)?;
+    let mut guard = slot.write().unwrap_or_else(PoisonError::into_inner);
+    if guard.is_none() {
+        *guard = Some(load_db(&state.db_dir, id)?);
+    }
+    f(guard.as_mut().expect("loaded above"))
 }
 
 type Shared = Arc<AppState>;
@@ -39,7 +109,7 @@ type Shared = Arc<AppState>;
 pub fn app(db_dir: PathBuf) -> Router {
     let state = Arc::new(AppState {
         db_dir,
-        write_lock: Mutex::new(()),
+        dbs: Mutex::new(HashMap::new()),
     });
     Router::new()
         .route("/", get(index))
@@ -252,64 +322,62 @@ async fn records(
     UrlPath(db): UrlPath<String>,
     Query(page): Query<Page>,
 ) -> ApiResult<Json<Value>> {
-    let dir = state.db_dir.clone();
-    blocking(move || {
-        let path = db_path(&dir, &db)?;
-        let image = load(&path)?;
-        let layout = detect(&image);
-        let ids = record_ids(&layout);
-        let offset = page.offset.unwrap_or(0);
-        let limit = page.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
-        let records: Vec<Value> = layout
-            .records
-            .iter()
-            .skip(offset)
-            .take(limit)
-            .map(|r| {
-                let fields: Vec<Value> = r
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &id)| {
-                        let f = &layout.fields[id - 1];
-                        field_json(format!("field_{i}"), f, &f.data, &ids)
-                    })
-                    .collect();
-                json!({ "id": ids[r.id], "fields": fields })
-            })
-            .collect();
-        let bg = image.get_pixel(0, 0).0;
-        Ok(Json(json!({
-            "db": db,
-            "total": layout.records.len(),
-            "offset": offset,
-            "limit": limit,
-            "background": format!("#{:02X}{:02X}{:02X}", bg[0], bg[1], bg[2]),
-            "records": records,
-        })))
-    })
-    .await
+    blocking(move || with_db(&state, &db, |d| records_page(&db, d, &page))).await
+}
+
+/// The JSON of one page of records of database `db`.
+fn records_page(db: &str, d: &Db, page: &Page) -> ApiResult<Json<Value>> {
+    let (image, layout, ids) = (&d.image, &d.layout, &d.ids);
+    let offset = page.offset.unwrap_or(0);
+    let limit = page.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
+    let records: Vec<Value> = layout
+        .records
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|r| {
+            let fields: Vec<Value> = r
+                .fields
+                .iter()
+                .enumerate()
+                .map(|(i, &id)| {
+                    let f = &layout.fields[id - 1];
+                    field_json(format!("field_{i}"), f, &f.data, ids)
+                })
+                .collect();
+            json!({ "id": ids[r.id], "fields": fields })
+        })
+        .collect();
+    let bg = image.get_pixel(0, 0).0;
+    Ok(Json(json!({
+        "db": db,
+        "total": layout.records.len(),
+        "offset": offset,
+        "limit": limit,
+        "background": format!("#{:02X}{:02X}{:02X}", bg[0], bg[1], bg[2]),
+        "records": records,
+    })))
 }
 
 async fn get_image(
     State(state): State<Shared>,
     UrlPath((db, x, y, i)): UrlPath<(String, u32, u32, usize)>,
 ) -> ApiResult<Response> {
-    let dir = state.db_dir.clone();
     blocking(move || {
-        let image = load(&db_path(&dir, &db)?)?;
-        let layout = detect(&image);
-        let f = find_field(&layout, x, y, i)?;
-        if f.data != FieldData::Image {
-            return Err(ApiError::not_found(format!(
-                "field {i} of record {x}/{y} is not an image field"
-            )));
-        }
-        let r = f.inner;
-        let crop =
-            image::imageops::crop_imm(&image, r.left, r.top, r.width(), r.height()).to_image();
-        let bytes = png_bytes(&crop)?;
-        Ok(([(header::CONTENT_TYPE, "image/png")], bytes).into_response())
+        with_db(&state, &db, |d| {
+            let (image, layout) = (&d.image, &d.layout);
+            let f = find_field(layout, x, y, i)?;
+            if f.data != FieldData::Image {
+                return Err(ApiError::not_found(format!(
+                    "field {i} of record {x}/{y} is not an image field"
+                )));
+            }
+            let r = f.inner;
+            let crop =
+                image::imageops::crop_imm(image, r.left, r.top, r.width(), r.height()).to_image();
+            let bytes = png_bytes(&crop)?;
+            Ok(([(header::CONTENT_TYPE, "image/png")], bytes).into_response())
+        })
     })
     .await
 }
@@ -341,38 +409,46 @@ fn to_write_value(type_name: &str, v: &Value) -> ApiResult<WriteValue> {
     })
 }
 
-/// Loads database `db`, writes the value built by `make` into field `i` of
-/// record `x/y`, saves, and returns the field's JSON.
+/// Writes the value built by `make` into field `i` of record `x/y` of database
+/// `db` in memory, saves the file, and returns the field's JSON. A write only
+/// changes pixels inside the field's data area (frame color is rejected), so
+/// the layout stays valid and only that field's data is updated. If the save
+/// fails, the data area's previous pixels are put back.
 async fn write(
     state: Shared,
     db: String,
     (x, y, i): (u32, u32, usize),
     make: impl FnOnce(&Field) -> ApiResult<WriteValue> + Send + 'static,
 ) -> ApiResult<Json<Value>> {
-    let _guard = state.write_lock.lock().await;
-    let dir = state.db_dir.clone();
     blocking(move || {
-        let path = db_path(&dir, &db)?;
-        let mut image = load(&path)?;
-        let layout = detect(&image);
-        let field = find_field(&layout, x, y, i)?.clone();
-        if let FieldData::Ref { .. } = field.data {
-            return Err(WriteError::NotWritable {
-                field: field.id,
-                type_name: "ref",
+        with_db_mut(&state, &db, |d| {
+            let field = find_field(&d.layout, x, y, i)?.clone();
+            if let FieldData::Ref { .. } = field.data {
+                return Err(WriteError::NotWritable {
+                    field: field.id,
+                    type_name: "ref",
+                }
+                .into());
             }
-            .into());
-        }
-        let value = make(&field)?;
-        let stored = write_field(&mut image, &layout, field.id, value)?;
-        save(&path, &image)?;
-        let ids = record_ids(&layout);
-        Ok(Json(field_json(
-            format!("field_{i}"),
-            &field,
-            &stored,
-            &ids,
-        )))
+            let value = make(&field)?;
+            let r = field.inner;
+            let before = image::imageops::crop_imm(&d.image, r.left, r.top, r.width(), r.height())
+                .to_image();
+            let stored = write_field(&mut d.image, &d.layout, field.id, value)?;
+            if let Err(e) = save(&d.path, &d.image) {
+                d.image
+                    .copy_from(&before, r.left, r.top)
+                    .expect("the copy fits where it came from");
+                return Err(e);
+            }
+            d.layout.fields[field.id - 1].data = stored.clone();
+            Ok(Json(field_json(
+                format!("field_{i}"),
+                &field,
+                &stored,
+                &d.ids,
+            )))
+        })
     })
     .await
 }

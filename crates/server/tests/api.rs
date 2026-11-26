@@ -4,6 +4,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
@@ -42,31 +43,80 @@ fn db_dir() -> TempDb {
     TempDb(dir)
 }
 
-/// Sends a request to the app and returns status, content type and body.
+/// One app instance that serves several requests and so shares its
+/// in-memory databases between them, like a running server.
+struct App(Router);
+
+impl App {
+    fn new(dir: &Path) -> Self {
+        App(server::app(dir.to_path_buf()))
+    }
+
+    /// Sends a request and returns status, content type and body.
+    async fn send(&self, req: Request<Body>) -> (StatusCode, String, Vec<u8>) {
+        let res = self.0.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let ctype = res
+            .headers()
+            .get("content-type")
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
+        let body = res.into_body().collect().await.unwrap().to_bytes().to_vec();
+        (status, ctype, body)
+    }
+
+    async fn get(&self, uri: &str) -> (StatusCode, Value) {
+        let (status, _, body) = self
+            .send(Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+
+    async fn get_bytes(&self, uri: &str) -> (StatusCode, Vec<u8>) {
+        let (status, _, body) = self
+            .send(Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        (status, body)
+    }
+
+    async fn put_json(&self, uri: &str, body: Value) -> (StatusCode, Value) {
+        let req = Request::put(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let (status, _, body) = self.send(req).await;
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+
+    async fn put_png(&self, uri: &str, png: Vec<u8>) -> (StatusCode, Value) {
+        let req = Request::put(uri)
+            .header("content-type", "image/png")
+            .body(Body::from(png))
+            .unwrap();
+        let (status, _, body) = self.send(req).await;
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+}
+
+/// Sends one request to a fresh app.
 async fn send(dir: &Path, req: Request<Body>) -> (StatusCode, String, Vec<u8>) {
-    let res = server::app(dir.to_path_buf()).oneshot(req).await.unwrap();
-    let status = res.status();
-    let ctype = res
-        .headers()
-        .get("content-type")
-        .map(|v| v.to_str().unwrap().to_string())
-        .unwrap_or_default();
-    let body = res.into_body().collect().await.unwrap().to_bytes().to_vec();
-    (status, ctype, body)
+    App::new(dir).send(req).await
 }
 
 async fn get(dir: &Path, uri: &str) -> (StatusCode, Value) {
-    let (status, _, body) = send(dir, Request::get(uri).body(Body::empty()).unwrap()).await;
-    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    App::new(dir).get(uri).await
 }
 
 async fn put_json(dir: &Path, uri: &str, body: Value) -> (StatusCode, Value) {
-    let req = Request::put(uri)
-        .header("content-type", "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap();
-    let (status, _, body) = send(dir, req).await;
-    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    App::new(dir).put_json(uri, body).await
+}
+
+/// Copies a file from `testdata/` to `dest`.
+fn copy_testdata(name: &str, dest: &Path) {
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata")
+        .join(name);
+    std::fs::copy(src, dest).unwrap();
 }
 
 fn png(img: &RgbaImage) -> Vec<u8> {
@@ -192,7 +242,10 @@ async fn image_endpoint() {
 #[tokio::test]
 async fn float_write_stores_what_fits() {
     let dir = db_dir();
-    let (status, body) = put_json(&dir, &format!("{R1}/fields/2"), json!({"value": 33.3})).await;
+    let app = App::new(&dir);
+    let (status, body) = app
+        .put_json(&format!("{R1}/fields/2"), json!({"value": 33.3}))
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["name"], "field_2");
     assert!(
@@ -200,7 +253,7 @@ async fn float_write_stores_what_fits() {
         "{body}"
     );
 
-    let (_, page) = get(&dir, "/api/dbs/example3/records").await;
+    let (_, page) = app.get("/api/dbs/example3/records").await;
     assert_eq!(page["records"][0]["fields"][2]["value"], body["value"]);
 }
 
@@ -339,6 +392,112 @@ async fn too_large_database_is_500_image_too_large() {
     let message = body["message"].as_str().unwrap();
     assert!(message.contains("20001x20000"), "{message}");
     assert!(message.contains("400000000"), "{message}");
+}
+
+// Databases held in memory
+
+#[tokio::test]
+async fn records_are_served_from_memory_after_the_file_changes() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    let (status, before) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(status, StatusCode::OK);
+    copy_testdata("example1.png", &dir.join("example3.png"));
+    let (status, after) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(after, before);
+    // A fresh server does see the new file.
+    let (_, fresh) = get(&dir, "/api/dbs/example3/records").await;
+    assert_ne!(fresh, before);
+}
+
+#[tokio::test]
+async fn image_data_is_served_from_memory_after_the_file_is_deleted() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    let full = image::open(dir.join("example3.png")).unwrap().to_rgba8();
+    let (status, _) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(status, StatusCode::OK);
+    std::fs::remove_file(dir.join("example3.png")).unwrap();
+    let (status, body) = app.get_bytes(&format!("{R1}/fields/0/image")).await;
+    assert_eq!(status, StatusCode::OK);
+    let got = image::load_from_memory(&body).unwrap().to_rgba8();
+    assert_eq!(got.dimensions(), (33, 20));
+    for (x, y, p) in got.enumerate_pixels() {
+        assert_eq!(p, full.get_pixel(40 + x, 26 + y));
+    }
+}
+
+#[tokio::test]
+async fn failed_load_is_retried() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    std::fs::write(dir.join("bad.png"), "not a png").unwrap();
+    let (status, body) = app.get("/api/dbs/bad/records").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    copy_testdata("example3.png", &dir.join("bad.png"));
+    let (status, body) = app.get("/api/dbs/bad/records").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["total"], 3);
+}
+
+#[tokio::test]
+async fn new_file_is_listed_and_served() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    let (_, body) = app.get("/api/dbs").await;
+    assert_eq!(body, json!({ "dbs": ["example3"] }));
+    copy_testdata("example1.png", &dir.join("new.png"));
+    let (_, body) = app.get("/api/dbs").await;
+    assert_eq!(body, json!({ "dbs": ["example3", "new"] }));
+    let (status, body) = app.get("/api/dbs/new/records").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["total"], 2);
+}
+
+#[tokio::test]
+async fn later_reads_see_a_write_from_memory() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    let (status, body) = app
+        .put_json(&format!("{R1}/fields/1"), json!({"value": 5}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    copy_testdata("example1.png", &dir.join("example3.png"));
+    let (_, page) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(page["records"][0]["id"], "35/21");
+    assert_eq!(page["records"][0]["fields"][1]["value"], 5);
+}
+
+#[tokio::test]
+async fn failed_save_leaves_memory_unchanged() {
+    let dir = db_dir();
+    let app = App::new(&dir);
+    let file_before = std::fs::read(dir.join("example3.png")).unwrap();
+    let (_, image_before) = app.get_bytes(&format!("{R1}/fields/0/image")).await;
+    // A directory where the temporary file should go makes every save fail.
+    std::fs::create_dir(dir.join("example3.png.tmp")).unwrap();
+
+    let (status, body) = app
+        .put_json(&format!("{R1}/fields/1"), json!({"value": 7}))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert!(body["error"].is_string(), "{body}");
+    let (_, page) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(page["records"][0]["fields"][1]["value"], 4);
+
+    let bitmap = RgbaImage::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
+    let (status, body) = app
+        .put_png(&format!("{R1}/fields/0/image"), png(&bitmap))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let (_, image_after) = app.get_bytes(&format!("{R1}/fields/0/image")).await;
+    assert_eq!(image_after, image_before);
+
+    assert_eq!(
+        std::fs::read(dir.join("example3.png")).unwrap(),
+        file_before
+    );
 }
 
 // Web page
