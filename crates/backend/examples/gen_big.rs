@@ -1,6 +1,7 @@
 //! Generates a large synthetic badba1 database image.
 //!
-//! Usage: `cargo run --release -p backend --example gen_big -- <out.png> [photo.png|- [width height records]]`
+//! Usage: `cargo run --release -p backend --example gen_big -- <out.png|out.bmp> [photo.png|- [width height records]]`
+//! An output path ending in `.bmp` is written as a 24-bit BMP, otherwise PNG.
 //! (defaults: no photo, 10000 40000 9000). With a photo, each `image` field
 //! holds a random crop of it at a random scale.
 //!
@@ -311,6 +312,11 @@ fn main() {
     if let Some(dir) = Path::new(out).parent() {
         std::fs::create_dir_all(dir).unwrap();
     }
-    img.save(out).unwrap();
+    if backend::is_bmp(Path::new(out)) {
+        let rgba = image::DynamicImage::ImageRgb8(img).into_rgba8();
+        backend::bmp::save_bmp(Path::new(out), &rgba).unwrap();
+    } else {
+        img.save(out).unwrap();
+    }
     println!("wrote {out}: {width}x{height}, {records} records");
 }

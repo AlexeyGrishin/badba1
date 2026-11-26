@@ -1,4 +1,4 @@
-//! Loading database images from PNG files.
+//! Loading database images from PNG and BMP files.
 
 use std::fmt;
 use std::io::Cursor;
@@ -26,7 +26,11 @@ pub enum Error {
         path: PathBuf,
         source: image::ImageError,
     },
-    /// The PNG has more than [`MAX_PIXELS`] pixels.
+    /// The file is not a valid BMP.
+    NotBmp { path: PathBuf, reason: String },
+    /// The file is a BMP of a kind that is not supported (see [`crate::bmp`]).
+    UnsupportedBmp { path: PathBuf, reason: String },
+    /// The image has more than [`MAX_PIXELS`] pixels.
     TooLarge {
         path: PathBuf,
         width: u32,
@@ -43,6 +47,14 @@ impl fmt::Display for Error {
             Error::Decode { path, source } => {
                 write!(f, "cannot decode {} as PNG: {source}", path.display())
             }
+            Error::NotBmp { path, reason } => {
+                write!(f, "cannot decode {} as BMP: {reason}", path.display())
+            }
+            Error::UnsupportedBmp { path, reason } => write!(
+                f,
+                "cannot load {}: unsupported BMP format: {reason}",
+                path.display()
+            ),
             Error::TooLarge {
                 path,
                 width,
@@ -62,7 +74,7 @@ impl std::error::Error for Error {
         match self {
             Error::Io { source, .. } => Some(source),
             Error::Decode { source, .. } => Some(source),
-            Error::TooLarge { .. } => None,
+            Error::NotBmp { .. } | Error::UnsupportedBmp { .. } | Error::TooLarge { .. } => None,
         }
     }
 }
@@ -103,6 +115,28 @@ pub fn load_png(path: &Path) -> Result<RgbaImage, Error> {
 /// Reads the PNG file at `path` and detects its fields and links.
 pub fn analyze_png(path: &Path) -> Result<Layout, Error> {
     Ok(detect(&load_png(path)?))
+}
+
+/// Whether `path` names a BMP file: its extension is `bmp` in any case.
+pub fn is_bmp(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("bmp"))
+}
+
+/// Reads the image at `path` as RGBA: a BMP if [`is_bmp`], otherwise a PNG.
+pub fn load_image(path: &Path) -> Result<RgbaImage, Error> {
+    if is_bmp(path) {
+        crate::bmp::load_bmp(path)
+    } else {
+        load_png(path)
+    }
+}
+
+/// Reads the PNG or BMP image at `path` (see [`load_image`]) and detects its
+/// fields and links.
+pub fn analyze_image(path: &Path) -> Result<Layout, Error> {
+    Ok(detect(&load_image(path)?))
 }
 
 #[cfg(test)]

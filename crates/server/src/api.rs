@@ -6,8 +6,14 @@
 //! own read/write lock: reads run in parallel, and a write updates memory and
 //! then saves through a temporary file and a rename, so a database is never
 //! half-written. A write whose save fails is undone in memory.
+//!
+//! Databases are `.png` or `.bmp` files. A PNG's pixels stay in memory. A BMP
+//! is decoded once for detection and then dropped: only its layout and
+//! background color stay in memory, field images are read from the file's
+//! rows, and a write overwrites just the field's data area in place.
 
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
@@ -19,8 +25,11 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use backend::{Field, FieldData, Layout, WriteError, WriteValue, detect, write_field};
-use image::{GenericImage, RgbaImage};
+use backend::bmp::BmpInfo;
+use backend::{
+    Field, FieldData, Layout, Rect, WriteError, WriteValue, detect, mark_area, write_field,
+};
+use image::{GenericImage, Rgba, RgbaImage};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -41,10 +50,27 @@ struct AppState {
 struct Db {
     /// The file it was loaded from, and is saved to.
     path: PathBuf,
-    image: RgbaImage,
+    pixels: Pixels,
     layout: Layout,
     /// Record ids, indexed by record number (see [`record_ids`]).
     ids: Vec<String>,
+    /// The image's top-left pixel, which counts as the background.
+    background: Rgba<u8>,
+}
+
+/// The file formats a database can have.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Png,
+    Bmp,
+}
+
+/// Where a database's pixels are.
+enum Pixels {
+    /// A PNG's pixels, decoded and kept in memory.
+    Memory(RgbaImage),
+    /// A BMP's pixels, read and written in place in its file.
+    Bmp(BmpInfo),
 }
 
 type Slot = Arc<RwLock<Option<Db>>>;
@@ -62,17 +88,31 @@ impl AppState {
     }
 }
 
-/// Reads and analyzes database `id` from its file.
+/// Reads and analyzes database `id` from its file. A BMP's decoded image is
+/// dropped once the layout is known.
 fn load_db(dir: &Path, id: &str) -> ApiResult<Db> {
-    let path = db_path(dir, id)?;
-    let image = load(&path)?;
+    let (path, kind) = db_path(dir, id)?;
+    let image = match kind {
+        Kind::Png => backend::load_png(&path),
+        Kind::Bmp => backend::bmp::load_bmp(&path),
+    }
+    .map_err(load_error)?;
     let layout = detect(&image);
     let ids = record_ids(&layout);
+    let background = *image.get_pixel(0, 0);
+    let pixels = match kind {
+        Kind::Png => Pixels::Memory(image),
+        Kind::Bmp => {
+            drop(image);
+            Pixels::Bmp(backend::bmp::read_info(&path).map_err(load_error)?)
+        }
+    };
     Ok(Db {
         path,
-        image,
+        pixels,
         layout,
         ids,
+        background,
     })
 }
 
@@ -151,6 +191,14 @@ impl ApiError {
         }
     }
 
+    fn conflict(kind: &'static str, message: impl Into<String>) -> Self {
+        ApiError {
+            status: StatusCode::CONFLICT,
+            kind,
+            message: message.into(),
+        }
+    }
+
     fn internal(message: impl Into<String>) -> Self {
         ApiError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -205,25 +253,43 @@ pub fn valid_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// The file of database `id`, if the id is valid and the file exists.
-fn db_path(dir: &Path, id: &str) -> ApiResult<PathBuf> {
-    let path = dir.join(format!("{id}.png"));
-    if valid_id(id) && path.is_file() {
-        Ok(path)
-    } else {
-        Err(ApiError::not_found(format!("no database {id:?}")))
+/// The file and format of database `id`: `<id>.png` or `<id>.bmp`. 404 if
+/// the id is invalid or neither file exists, 409 if both do.
+fn db_path(dir: &Path, id: &str) -> ApiResult<(PathBuf, Kind)> {
+    let not_found = || ApiError::not_found(format!("no database {id:?}"));
+    if !valid_id(id) {
+        return Err(not_found());
+    }
+    let png = dir.join(format!("{id}.png"));
+    let bmp = dir.join(format!("{id}.bmp"));
+    match (png.is_file(), bmp.is_file()) {
+        (true, true) => Err(ApiError::conflict(
+            "AmbiguousDatabase",
+            format!("database {id:?} exists as both {id}.png and {id}.bmp"),
+        )),
+        (true, false) => Ok((png, Kind::Png)),
+        (false, true) => Ok((bmp, Kind::Bmp)),
+        (false, false) => Err(not_found()),
     }
 }
 
-fn load(path: &Path) -> ApiResult<RgbaImage> {
-    backend::load_png(path).map_err(|e| match e {
+fn load_error(e: backend::Error) -> ApiError {
+    match e {
         backend::Error::TooLarge { .. } => ApiError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             kind: "ImageTooLarge",
             message: e.to_string(),
         },
         _ => ApiError::internal(e.to_string()),
-    })
+    }
+}
+
+/// Reads rectangle `rect` of a BMP database's file.
+fn read_bmp_rect(path: &Path, info: &BmpInfo, rect: Rect) -> ApiResult<RgbaImage> {
+    let fail =
+        |e: std::io::Error| ApiError::internal(format!("cannot read {}: {e}", path.display()));
+    let mut file = File::open(path).map_err(fail)?;
+    backend::bmp::read_rect(&mut file, info, rect).map_err(fail)
 }
 
 /// Saves `image` to `path` via a temporary file in the same folder.
@@ -301,11 +367,12 @@ async fn list_dbs(State(state): State<Shared>) -> ApiResult<Json<Value>> {
         let mut dbs: Vec<String> = entries
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "png"))
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "png" || x == "bmp"))
             .filter_map(|p| p.file_stem()?.to_str().map(str::to_string))
             .filter(|id| valid_id(id))
             .collect();
         dbs.sort();
+        dbs.dedup();
         Ok(Json(json!({ "dbs": dbs })))
     })
     .await
@@ -327,7 +394,7 @@ async fn records(
 
 /// The JSON of one page of records of database `db`.
 fn records_page(db: &str, d: &Db, page: &Page) -> ApiResult<Json<Value>> {
-    let (image, layout, ids) = (&d.image, &d.layout, &d.ids);
+    let (layout, ids) = (&d.layout, &d.ids);
     let offset = page.offset.unwrap_or(0);
     let limit = page.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
     let records: Vec<Value> = layout
@@ -348,7 +415,7 @@ fn records_page(db: &str, d: &Db, page: &Page) -> ApiResult<Json<Value>> {
             json!({ "id": ids[r.id], "fields": fields })
         })
         .collect();
-    let bg = image.get_pixel(0, 0).0;
+    let bg = d.background.0;
     Ok(Json(json!({
         "db": db,
         "total": layout.records.len(),
@@ -365,16 +432,20 @@ async fn get_image(
 ) -> ApiResult<Response> {
     blocking(move || {
         with_db(&state, &db, |d| {
-            let (image, layout) = (&d.image, &d.layout);
-            let f = find_field(layout, x, y, i)?;
+            let f = find_field(&d.layout, x, y, i)?;
             if f.data != FieldData::Image {
                 return Err(ApiError::not_found(format!(
                     "field {i} of record {x}/{y} is not an image field"
                 )));
             }
             let r = f.inner;
-            let crop =
-                image::imageops::crop_imm(image, r.left, r.top, r.width(), r.height()).to_image();
+            let crop = match &d.pixels {
+                Pixels::Memory(image) => {
+                    image::imageops::crop_imm(image, r.left, r.top, r.width(), r.height())
+                        .to_image()
+                }
+                Pixels::Bmp(info) => read_bmp_rect(&d.path, info, r)?,
+            };
             let bytes = png_bytes(&crop)?;
             Ok(([(header::CONTENT_TYPE, "image/png")], bytes).into_response())
         })
@@ -431,16 +502,10 @@ async fn write(
                 .into());
             }
             let value = make(&field)?;
-            let r = field.inner;
-            let before = image::imageops::crop_imm(&d.image, r.left, r.top, r.width(), r.height())
-                .to_image();
-            let stored = write_field(&mut d.image, &d.layout, field.id, value)?;
-            if let Err(e) = save(&d.path, &d.image) {
-                d.image
-                    .copy_from(&before, r.left, r.top)
-                    .expect("the copy fits where it came from");
-                return Err(e);
-            }
+            let stored = match &mut d.pixels {
+                Pixels::Memory(image) => write_png(&d.path, image, &d.layout, &field, value)?,
+                Pixels::Bmp(info) => write_bmp(&d.path, info, d.background, &field, value)?,
+            };
             d.layout.fields[field.id - 1].data = stored.clone();
             Ok(Json(field_json(
                 format!("field_{i}"),
@@ -451,6 +516,111 @@ async fn write(
         })
     })
     .await
+}
+
+/// Writes `value` into `field` of a PNG database held in memory as `image`,
+/// then saves the whole file. If the save fails, the data area's previous
+/// pixels are put back.
+fn write_png(
+    path: &Path,
+    image: &mut RgbaImage,
+    layout: &Layout,
+    field: &Field,
+    value: WriteValue,
+) -> ApiResult<FieldData> {
+    let r = field.inner;
+    let before = image::imageops::crop_imm(image, r.left, r.top, r.width(), r.height()).to_image();
+    let stored = write_field(image, layout, field.id, value)?;
+    if let Err(e) = save(path, image) {
+        image
+            .copy_from(&before, r.left, r.top)
+            .expect("the copy fits where it came from");
+        return Err(e);
+    }
+    Ok(stored)
+}
+
+/// Writes `value` into `field` of a BMP database, changing only the data
+/// area's bytes in the file.
+///
+/// The field's frame, type mark and data area are read into a small window
+/// whose top-left pixel is set to the image's background, so `write_field`
+/// sees everything it reads: the mark, the data area and the background at
+/// (0,0). Only the window's data area is written back.
+fn write_bmp(
+    path: &Path,
+    info: &BmpInfo,
+    background: Rgba<u8>,
+    field: &Field,
+    value: WriteValue,
+) -> ApiResult<FieldData> {
+    // Without an alpha channel the file stores every pixel as opaque; check
+    // the frame color against what will be stored.
+    let value = match value {
+        WriteValue::Image(mut bitmap) if !info.has_alpha => {
+            for p in bitmap.pixels_mut() {
+                p.0[3] = 255;
+            }
+            WriteValue::Image(bitmap)
+        }
+        v => v,
+    };
+    let mut area = field.outer;
+    if let Some(mark) = mark_area(field.outer) {
+        area = Rect::new(
+            area.left.min(mark.left),
+            area.top.min(mark.top),
+            area.right.max(mark.right),
+            area.bottom.max(mark.bottom),
+        );
+    }
+    let fail = |e: std::io::Error| ApiError::internal(format!("cannot save: {e}"));
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(fail)?;
+    let pixels = backend::bmp::read_rect(&mut file, info, area).map_err(fail)?;
+    let mut window = RgbaImage::from_pixel(area.width() + 1, area.height() + 1, background);
+    window
+        .copy_from(&pixels, 1, 1)
+        .expect("the window holds the area");
+    let shift = |q: Rect| {
+        Rect::new(
+            q.left - area.left + 1,
+            q.top - area.top + 1,
+            q.right - area.left + 1,
+            q.bottom - area.top + 1,
+        )
+    };
+    let mut shifted = field.clone();
+    shifted.outer = shift(field.outer);
+    shifted.inner = shift(field.inner);
+    let inner = shifted.inner;
+    let mini = Layout {
+        width: window.width(),
+        height: window.height(),
+        fields: vec![shifted],
+        links: Vec::new(),
+        records: Vec::new(),
+    };
+    let crop = |img: &RgbaImage| {
+        image::imageops::crop_imm(img, inner.left, inner.top, inner.width(), inner.height())
+            .to_image()
+    };
+    let before = crop(&window);
+    let stored = write_field(&mut window, &mini, field.id, value)?;
+    let after = crop(&window);
+    let (x, y) = (field.inner.left, field.inner.top);
+    let written =
+        backend::bmp::write_rect(&mut file, info, x, y, &after).and_then(|()| file.sync_data());
+    if let Err(e) = written {
+        // Best effort: put the previous bytes back.
+        let _ = backend::bmp::write_rect(&mut file, info, x, y, &before)
+            .and_then(|()| file.sync_data());
+        return Err(fail(e));
+    }
+    Ok(stored)
 }
 
 async fn put_value(

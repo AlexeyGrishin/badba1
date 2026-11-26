@@ -1,6 +1,7 @@
 //! Command-line tool for inspecting badba1 database images.
 //!
-//! Usage: `cli <image.png>` prints the fields and links detected in the image.
+//! Usage: `cli <image.png|image.bmp>` prints the fields and links detected in
+//! the image. The format follows the file extension.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -10,11 +11,11 @@ use backend::{FieldData, Layout, Rect};
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [path] = args.as_slice() else {
-        eprintln!("usage: cli <image.png>");
-        eprintln!("Shows the fields and links detected in a badba1 PNG image.");
+        eprintln!("usage: cli <image.png|image.bmp>");
+        eprintln!("Shows the fields and links detected in a badba1 PNG or BMP image.");
         return ExitCode::from(2);
     };
-    match backend::analyze_png(Path::new(path)) {
+    match backend::analyze_image(Path::new(path)) {
         Ok(layout) => {
             print!("{}", render(path, &layout));
             ExitCode::SUCCESS

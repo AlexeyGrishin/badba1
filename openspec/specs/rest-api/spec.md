@@ -18,7 +18,7 @@ The `server` binary SHALL serve the databases in a folder, `db` by default or th
 - **THEN** it prints an error naming `no-such-dir` and exits with a non-zero status
 
 ### Requirement: Database ids
-Each `.png` file directly in the database folder SHALL be a database whose id is the file name without `.png`. Ids SHALL consist only of letters, digits, `-` and `_`. A request naming any other id, or an id with no matching file, gets a 404 response.
+Each `.png` or `.bmp` file directly in the database folder SHALL be a database whose id is the file name without its extension. Ids SHALL consist only of letters, digits, `-` and `_`. A request naming any other id, or an id with no matching file, gets a 404 response. An id with both a `.png` and a `.bmp` file is listed once, and every request to it gets a 409 response with `"error": "AmbiguousDatabase"`.
 
 #### Scenario: List databases
 - **WHEN** the folder holds `example1.png`, `b.png` and `notes.txt`, and a client sends `GET /api/dbs`
@@ -27,6 +27,14 @@ Each `.png` file directly in the database folder SHALL be a database whose id is
 #### Scenario: Unknown or unsafe id
 - **WHEN** a client requests `/api/dbs/missing/records` or `/api/dbs/..%2Fsecret/records`
 - **THEN** the response is 404 with a JSON error
+
+#### Scenario: BMP databases are listed
+- **WHEN** the folder holds `a.png` and `c.bmp`, and a client sends `GET /api/dbs`
+- **THEN** the response is `{"dbs": ["a", "c"]}`
+
+#### Scenario: Same id in both formats
+- **WHEN** the folder holds `x.png` and `x.bmp`
+- **THEN** `GET /api/dbs` lists `x` once, and `/api/dbs/x/records` returns 409 with `"error": "AmbiguousDatabase"`
 
 ### Requirement: Record ids
 A record's id SHALL be `"x/y"`, where (x, y) is the top-left corner of its first field's frame. In URLs a record is addressed as `/records/{x}/{y}`.
@@ -117,7 +125,7 @@ Errors SHALL be JSON `{"error": <kind>, "message": <text>}`, with the database f
 - **THEN** the response is 200 with the first page of records
 
 ### Requirement: Databases held in memory
-The server SHALL read and analyze a database's file at most once per run: when a request first names that database. Later requests SHALL be served from memory. Changes made to the file by other programs while the server runs SHALL NOT be seen until restart. A load that fails SHALL NOT be remembered, so a later request tries again.
+The server SHALL read and analyze a database's file at most once per run: when a request first names that database. Later requests SHALL be served from memory. For PNG databases, changes made to the file by other programs while the server runs SHALL NOT be seen until restart. A load that fails SHALL NOT be remembered, so a later request tries again.
 
 #### Scenario: Second request does not read the file
 - **WHEN** a client requests `/api/dbs/example3/records`, the file `example3.png` is then replaced on disk by a different valid database image, and the client requests `/api/dbs/example3/records` again from the same server
@@ -145,3 +153,26 @@ A successful write SHALL update the database held in memory as well as its file,
 #### Scenario: Failed save leaves memory unchanged
 - **WHEN** a write is valid but the database file cannot be saved
 - **THEN** the response is a 500 JSON error, and a later records request shows the field's previous value
+
+### Requirement: BMP databases keep pixels on disk
+For a BMP database, the server SHALL keep only the layout, field values and background color in memory after its first use. A field's image SHALL be read from the file's rows for that data area. A write SHALL overwrite only that data area's bytes in place, leaving the file's size and all other bytes unchanged. Responses SHALL be the same as for the same database stored as PNG.
+
+#### Scenario: Same responses as PNG
+- **WHEN** the folder holds `example3.bmp`, which is `testdata/example3.png` saved as a 24-bit BMP, and a client requests its records page and the image of field 0 of record `35/21`
+- **THEN** both responses equal those for `example3.png`
+
+#### Scenario: Write patches the file in place
+- **WHEN** a client writes `{"value": 5}` to the counter field 1 of record `35/21` in `example3.bmp`
+- **THEN** the response is 200 with value 5, the file has the same size, only bytes within that field's data-area rows differ, and `cli example3.bmp` shows that field as `counter 5`
+
+#### Scenario: Image upload into a BMP
+- **WHEN** a client sends a 10×10 PNG to field 0 of record `35/21` of `example3.bmp`
+- **THEN** the field's image endpoint returns a 33×20 PNG whose top-left 10×10 pixels equal the upload, with the PNG's alpha made fully opaque
+
+#### Scenario: Failed in-place write
+- **WHEN** a write to a BMP database is valid but the file cannot be written
+- **THEN** the response is a 500 JSON error, and later requests show the field's previous value and pixels
+
+#### Scenario: Large BMP stays small in memory
+- **WHEN** a 10000×40000 `big.bmp` is served and its records page has been requested once
+- **THEN** the server process's memory use stays below 500 MB, while a records page and a field image each take under 100 ms

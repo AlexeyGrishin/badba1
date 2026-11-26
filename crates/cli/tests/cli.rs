@@ -57,7 +57,10 @@ fn no_arguments_prints_usage() {
     let out = cli(&[]);
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stderr.contains("usage: cli <image.png>"), "{stderr}");
+    assert!(
+        stderr.contains("usage: cli <image.png|image.bmp>"),
+        "{stderr}"
+    );
     assert!(out.stdout.is_empty());
 }
 
@@ -117,4 +120,20 @@ fn too_large_image_is_a_file_error() {
     assert!(stderr.contains("huge.png"), "{stderr}");
     assert!(stderr.contains("too large"), "{stderr}");
     assert!(stderr.contains("400000000"), "{stderr}");
+}
+
+#[test]
+fn bmp_image_prints_the_same_layout() {
+    let png = example1();
+    let bmp = std::env::temp_dir().join(format!("badba1-cli-{}-example1.bmp", std::process::id()));
+    let image = backend::load_png(std::path::Path::new(&png)).unwrap();
+    backend::bmp::save_bmp(&bmp, &image).unwrap();
+    let bmp = bmp.to_string_lossy().into_owned();
+    let from_png = cli(&[&png]);
+    let from_bmp = cli(&[&bmp]);
+    std::fs::remove_file(&bmp).ok();
+    assert_eq!(from_bmp.status.code(), Some(0));
+    let png_out = String::from_utf8(from_png.stdout).unwrap();
+    let bmp_out = String::from_utf8(from_bmp.stdout).unwrap();
+    assert_eq!(bmp_out.replacen(&bmp, &png, 1), png_out);
 }

@@ -500,6 +500,167 @@ async fn failed_save_leaves_memory_unchanged() {
     );
 }
 
+// BMP databases
+
+/// Replaces `example3.png` in `dir` with the same image saved as a 24-bit
+/// BMP, and returns the BMP's path.
+fn to_bmp(dir: &Path) -> PathBuf {
+    let png = dir.join("example3.png");
+    let bmp = dir.join("example3.bmp");
+    let image = backend::load_png(&png).unwrap();
+    backend::bmp::save_bmp(&bmp, &image).unwrap();
+    std::fs::remove_file(png).unwrap();
+    bmp
+}
+
+#[tokio::test]
+async fn bmp_databases_are_listed() {
+    let dir = db_dir();
+    let image = backend::load_png(&dir.join("example3.png")).unwrap();
+    backend::bmp::save_bmp(&dir.join("c.bmp"), &image).unwrap();
+    let (status, body) = get(&dir, "/api/dbs").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "dbs": ["c", "example3"] }));
+}
+
+#[tokio::test]
+async fn same_id_in_both_formats_is_409() {
+    let dir = db_dir();
+    let image = backend::load_png(&dir.join("example3.png")).unwrap();
+    backend::bmp::save_bmp(&dir.join("example3.bmp"), &image).unwrap();
+    let (_, body) = get(&dir, "/api/dbs").await;
+    assert_eq!(body, json!({ "dbs": ["example3"] }));
+    let (status, body) = get(&dir, "/api/dbs/example3/records").await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["error"], "AmbiguousDatabase");
+}
+
+#[tokio::test]
+async fn bmp_responses_equal_png() {
+    let png_dir = db_dir();
+    let bmp_dir = db_dir();
+    to_bmp(&bmp_dir);
+    let (png_app, bmp_app) = (App::new(&png_dir), App::new(&bmp_dir));
+    let (status, bmp_page) = bmp_app.get("/api/dbs/example3/records").await;
+    assert_eq!(status, StatusCode::OK, "{bmp_page}");
+    let (_, png_page) = png_app.get("/api/dbs/example3/records").await;
+    assert_eq!(bmp_page, png_page);
+
+    let uri = format!("{R1}/fields/0/image");
+    let (status, bmp_png) = bmp_app.get_bytes(&uri).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, png_png) = png_app.get_bytes(&uri).await;
+    let decode = |b: &[u8]| image::load_from_memory(b).unwrap().to_rgba8();
+    assert_eq!(decode(&bmp_png).dimensions(), (33, 20));
+    assert_eq!(decode(&bmp_png), decode(&png_png));
+}
+
+#[tokio::test]
+async fn bmp_write_patches_the_file_in_place() {
+    let dir = db_dir();
+    let path = to_bmp(&dir);
+    let before = std::fs::read(&path).unwrap();
+    let app = App::new(&dir);
+    let (status, body) = app
+        .put_json(&format!("{R1}/fields/1"), json!({"value": 5}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["value"], 5);
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(after.len(), before.len());
+
+    let layout = backend::analyze_image(&path).unwrap();
+    let field = layout
+        .fields
+        .iter()
+        .find(|f| f.outer == backend::Rect::new(101, 22, 137, 47))
+        .unwrap();
+    assert!(matches!(
+        field.data,
+        backend::FieldData::Counter { count: 5, .. }
+    ));
+    let info = backend::bmp::read_info(&path).unwrap();
+    let bpp = u64::from(info.bytes_per_pixel);
+    let inner = field.inner;
+    let in_data_area = |i: u64| {
+        (inner.top..=inner.bottom).any(|y| {
+            let start = info.row_offset(y) + u64::from(inner.left) * bpp;
+            (start..start + u64::from(inner.width()) * bpp).contains(&i)
+        })
+    };
+    let changed: Vec<u64> = (0..before.len() as u64)
+        .filter(|&i| before[i as usize] != after[i as usize])
+        .collect();
+    assert!(!changed.is_empty());
+    assert!(changed.iter().all(|&i| in_data_area(i)), "{changed:?}");
+
+    let (_, page) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(page["records"][0]["fields"][1]["value"], 5);
+}
+
+#[tokio::test]
+async fn bmp_image_upload_is_stored_opaque() {
+    let dir = db_dir();
+    to_bmp(&dir);
+    let app = App::new(&dir);
+    let bitmap = RgbaImage::from_fn(10, 10, |x, y| {
+        Rgba([(x * 20) as u8, (y * 20) as u8, 90, 128])
+    });
+    let uri = format!("{R1}/fields/0/image");
+    let (status, body) = app.put_png(&uri, png(&bitmap)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, bytes) = app.get_bytes(&uri).await;
+    let got = image::load_from_memory(&bytes).unwrap().to_rgba8();
+    assert_eq!(got.dimensions(), (33, 20));
+    for (x, y, p) in bitmap.enumerate_pixels() {
+        assert_eq!(got.get_pixel(x, y), &Rgba([p[0], p[1], p[2], 255]));
+    }
+}
+
+#[tokio::test]
+async fn bmp_rejected_write_leaves_the_file_unchanged() {
+    let dir = db_dir();
+    let path = to_bmp(&dir);
+    let before = std::fs::read(&path).unwrap();
+    let (status, body) = put_json(
+        &dir,
+        &format!("{R2}/fields/3"),
+        json!({"value": "HELLO WORLD"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["error"], "FieldOverflow");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn bmp_failed_write_keeps_the_previous_value() {
+    let dir = db_dir();
+    let path = to_bmp(&dir);
+    let app = App::new(&dir);
+    let (_, image_before) = app.get_bytes(&format!("{R1}/fields/0/image")).await;
+    let set_readonly = |readonly: bool| {
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(readonly);
+        std::fs::set_permissions(&path, perms).unwrap();
+    };
+    set_readonly(true);
+    let (status, body) = app
+        .put_json(&format!("{R1}/fields/1"), json!({"value": 7}))
+        .await;
+    let bitmap = RgbaImage::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
+    let (image_status, _) = app
+        .put_png(&format!("{R1}/fields/0/image"), png(&bitmap))
+        .await;
+    set_readonly(false);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert_eq!(image_status, StatusCode::INTERNAL_SERVER_ERROR);
+    let (_, page) = app.get("/api/dbs/example3/records").await;
+    assert_eq!(page["records"][0]["fields"][1]["value"], 4);
+    let (_, image_after) = app.get_bytes(&format!("{R1}/fields/0/image")).await;
+    assert_eq!(image_after, image_before);
+}
+
 // Web page
 
 #[tokio::test]
