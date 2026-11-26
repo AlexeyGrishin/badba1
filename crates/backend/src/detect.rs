@@ -13,6 +13,7 @@ use std::collections::{BTreeSet, VecDeque};
 use image::{Rgba, RgbaImage};
 
 use crate::layout::{Borders, Field, FieldData, Layout, Link, Rect};
+use crate::references::FieldMap;
 
 /// The frame color, `#BADBA1`, fully opaque. Only exact matches count.
 pub const FRAME_COLOR: Rgba<u8> = Rgba([0xBA, 0xDB, 0xA1, 0xFF]);
@@ -36,6 +37,7 @@ pub fn is_frame_color(pixel: Rgba<u8>) -> bool {
 
 /// Detects all fields and links in `image`.
 pub fn detect(image: &RgbaImage) -> Layout {
+    let (width, height) = image.dimensions();
     let grid = Grid::new(image);
     let mut fields = find_fields(&grid);
     fields.sort_by_key(|f| (f.outer.top, f.outer.left));
@@ -43,12 +45,15 @@ pub fn detect(image: &RgbaImage) -> Layout {
         field.id = i + 1;
         field.data = crate::types::read_data(image, field);
     }
-    let links = find_links(&grid, &fields);
+    let map = FieldMap::new(width, height, &fields);
+    let links = find_links(&grid, &map);
+    // Free the mask before resolving references; large images need the room.
+    drop(grid);
     let records = crate::records::records(&fields, &links);
-    crate::references::resolve(image, &mut fields, &records);
+    crate::references::resolve_with(image, &mut fields, &records, &map);
     Layout {
-        width: grid.width,
-        height: grid.height,
+        width,
+        height,
         fields,
         links,
         records,
@@ -87,12 +92,13 @@ impl Grid {
             .then_some((nx as u32, ny as u32))
     }
 
-    /// Calls `visit` for each connected region of pixels whose mask value is
-    /// `value`, using the given neighborhood.
-    fn regions(&self, value: bool, neighbors: &[(i64, i64)], mut visit: impl FnMut(&[(u32, u32)])) {
+    /// Calls `visit` with the bounding box and pixel count of each connected
+    /// region of pixels whose mask value is `value`, using the given
+    /// neighborhood. Regions are not stored, so a huge background costs only
+    /// its BFS frontier.
+    fn regions(&self, value: bool, neighbors: &[(i64, i64)], mut visit: impl FnMut(Rect, u64)) {
         let mut seen = vec![false; self.mask.len()];
         let mut queue = VecDeque::new();
-        let mut region = Vec::new();
         for y in 0..self.height {
             for x in 0..self.width {
                 let start = self.index(x, y);
@@ -101,9 +107,14 @@ impl Grid {
                 }
                 seen[start] = true;
                 queue.push_back((x, y));
-                region.clear();
+                let mut bounds = Rect::new(x, y, x, y);
+                let mut count = 0u64;
                 while let Some((cx, cy)) = queue.pop_front() {
-                    region.push((cx, cy));
+                    count += 1;
+                    bounds.left = bounds.left.min(cx);
+                    bounds.top = bounds.top.min(cy);
+                    bounds.right = bounds.right.max(cx);
+                    bounds.bottom = bounds.bottom.max(cy);
                     for &offset in neighbors {
                         if let Some((nx, ny)) = self.neighbor(cx, cy, offset) {
                             let i = self.index(nx, ny);
@@ -114,7 +125,7 @@ impl Grid {
                         }
                     }
                 }
-                visit(&region);
+                visit(bounds, count);
             }
         }
     }
@@ -131,8 +142,8 @@ impl Grid {
 /// Finds all fields. Ids are left at 0 for the caller to assign.
 fn find_fields(grid: &Grid) -> Vec<Field> {
     let mut interiors = Vec::new();
-    grid.regions(false, &N4, |region| {
-        if let Some(rect) = filled_rect(grid, region) {
+    grid.regions(false, &N4, |bounds, count| {
+        if let Some(rect) = filled_rect(grid, bounds, count) {
             interiors.push(rect);
         }
     });
@@ -142,20 +153,14 @@ fn find_fields(grid: &Grid) -> Vec<Field> {
         .collect()
 }
 
-/// The region's bounding box, if the region fills it exactly and doesn't touch
-/// the image edge.
-fn filled_rect(grid: &Grid, region: &[(u32, u32)]) -> Option<Rect> {
-    let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
-    for &(x, y) in region {
-        left = left.min(x);
-        top = top.min(y);
-        right = right.max(x);
-        bottom = bottom.max(y);
-    }
-    let rect = Rect::new(left, top, right, bottom);
-    let touches_edge =
-        left == 0 || top == 0 || right == grid.width - 1 || bottom == grid.height - 1;
-    let filled = region.len() as u64 == u64::from(rect.width()) * u64::from(rect.height());
+/// A region's bounding box, if the region (of `count` pixels) fills it exactly
+/// and doesn't touch the image edge.
+fn filled_rect(grid: &Grid, rect: Rect, count: u64) -> Option<Rect> {
+    let touches_edge = rect.left == 0
+        || rect.top == 0
+        || rect.right == grid.width - 1
+        || rect.bottom == grid.height - 1;
+    let filled = count == u64::from(rect.width()) * u64::from(rect.height());
     (!touches_edge && filled).then_some(rect)
 }
 
@@ -205,27 +210,15 @@ fn frame_around(grid: &Grid, inner: Rect) -> Option<Field> {
     })
 }
 
-/// Finds links between `fields`, which must already be numbered.
-fn find_links(grid: &Grid, fields: &[Field]) -> Vec<Link> {
-    // Which field's frame each pixel belongs to, if any.
-    let mut owner: Vec<Option<usize>> = vec![None; grid.mask.len()];
-    for field in fields {
-        for y in field.outer.top..=field.outer.bottom {
-            for x in field.outer.left..=field.outer.right {
-                if !field.inner.contains(x, y) {
-                    owner[grid.index(x, y)] = Some(field.id);
-                }
-            }
-        }
-    }
-
+/// Finds links between the fields in `map`.
+fn find_links(grid: &Grid, map: &FieldMap) -> Vec<Link> {
     let mut field_lists = Vec::new();
     let mut seen = vec![false; grid.mask.len()];
     let mut queue = VecDeque::new();
     for y in 0..grid.height {
         for x in 0..grid.width {
             let start = grid.index(x, y);
-            if seen[start] || !grid.mask[start] || owner[start].is_some() {
+            if seen[start] || !grid.mask[start] || map.frame_owner(x, y).is_some() {
                 continue;
             }
             seen[start] = true;
@@ -240,7 +233,7 @@ fn find_links(grid: &Grid, fields: &[Field]) -> Vec<Link> {
                     if !grid.mask[i] {
                         continue;
                     }
-                    match owner[i] {
+                    match map.frame_owner(nx, ny) {
                         Some(id) => {
                             touched.insert(id);
                         }

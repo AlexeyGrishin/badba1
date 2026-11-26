@@ -110,3 +110,26 @@ The detected layout of the reference image `testdata/example1.png` SHALL be 5 fi
 - **WHEN** `testdata/example1.png` (539×348) is analyzed
 - **THEN** 5 fields are reported, each with a 5-pixel border on every side, with outer rectangles (left, top, right, bottom) (101,22,137,47), (35,23,77,52), (156,22,193,50), (130,69,167,97) and (72,70,107,97)
 - **AND** 3 links are reported: between the fields at (35,23,77,52) and (101,22,137,47), between (101,22,137,47) and (156,22,193,50), and between (72,70,107,97) and (130,69,167,97)
+
+### Requirement: Maximum image size
+The system SHALL read and analyze any valid PNG of up to 400,000,000 pixels (width × height), of any shape, color type or bit depth. A PNG with more pixels SHALL be rejected, with no layout, by an error that says the image is too large and gives its dimensions and the maximum. The rejection SHALL happen before the pixel data is decoded.
+
+#### Scenario: Maximum-size image is analyzed
+- **WHEN** the system is given a 10000×40000 PNG database image, such as `db/big.png` from the `gen_big` example
+- **THEN** it returns the image's layout with width 10000 and height 40000, and every generated record is detected
+
+#### Scenario: Other shape at the maximum
+- **WHEN** the system is given a valid 20000×20000 PNG
+- **THEN** it returns the image's layout
+
+#### Scenario: One pixel over the maximum
+- **WHEN** the system is given a valid PNG with 400,000,001 or more pixels, such as 20001×20000
+- **THEN** it reports an error that says the image is too large, names the file, and gives `20001x20000` and the 400,000,000-pixel maximum. It returns no layout.
+
+#### Scenario: Too-large image is rejected quickly
+- **WHEN** the system is given a PNG whose header declares 100000×100000 pixels
+- **THEN** it reports the too-large error without allocating memory for the pixels
+
+#### Scenario: Small images are unaffected
+- **WHEN** the system is given any image it could analyze before, such as `testdata/example1.png`
+- **THEN** it returns the same layout as before

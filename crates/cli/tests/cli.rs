@@ -74,3 +74,47 @@ fn missing_file() {
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("does-not-exist.png"), "{stderr}");
 }
+
+/// A PNG with a signature, an IHDR chunk declaring `width`×`height` and an
+/// empty IDAT chunk: enough to read the size, with no pixel data.
+fn header_only_png(width: u32, height: u32) -> Vec<u8> {
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &b in data {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+    let mut ihdr = b"IHDR".to_vec();
+    ihdr.extend(width.to_be_bytes());
+    ihdr.extend(height.to_be_bytes());
+    ihdr.extend([8, 6, 0, 0, 0]);
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend(13u32.to_be_bytes());
+    png.extend(&ihdr);
+    png.extend(crc32(&ihdr).to_be_bytes());
+    png.extend(0u32.to_be_bytes());
+    png.extend(b"IDAT");
+    png.extend(crc32(b"IDAT").to_be_bytes());
+    png
+}
+
+#[test]
+fn too_large_image_is_a_file_error() {
+    let path = std::env::temp_dir().join(format!("badba1-cli-{}-huge.png", std::process::id()));
+    std::fs::write(&path, header_only_png(20001, 20000)).unwrap();
+    let out = cli(&[&path.to_string_lossy()]);
+    std::fs::remove_file(&path).ok();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("huge.png"), "{stderr}");
+    assert!(stderr.contains("too large"), "{stderr}");
+    assert!(stderr.contains("400000000"), "{stderr}");
+}

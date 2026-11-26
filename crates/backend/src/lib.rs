@@ -2,7 +2,7 @@
 //!
 //! Fields are rectangular data areas framed in the color `#BADBA1`. Links are
 //! gap-free strokes in the same color that join two or more fields.
-//! [`analyze_png`] reads a PNG file and returns its [`Layout`];
+//! [`analyze_png`] reads a PNG file (up to [`MAX_PIXELS`]) and returns its [`Layout`];
 //! [`detect`] does the same for an image already in memory.
 //!
 //! Each field has a data type ([`FieldData`]), set by a 3×3 mark above its
@@ -25,7 +25,7 @@ mod write;
 pub use detect::{FRAME_COLOR, detect, is_frame_color};
 pub use font::{Font, FontError, GlyphMask, builtin as builtin_font};
 pub use layout::{Borders, Field, FieldData, Layout, Link, Record, Rect};
-pub use load::{Error, analyze_png};
+pub use load::{Error, MAX_PIXELS, analyze_png, load_png};
 pub use records::records;
 pub use references::{REF_REACH, resolve as resolve_references};
 pub use strings::{UNKNOWN_GLYPH, read_text};

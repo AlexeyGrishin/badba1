@@ -146,9 +146,14 @@ fn db_path(dir: &Path, id: &str) -> ApiResult<PathBuf> {
 }
 
 fn load(path: &Path) -> ApiResult<RgbaImage> {
-    image::open(path)
-        .map(|i| i.to_rgba8())
-        .map_err(|e| ApiError::internal(format!("cannot read {}: {e}", path.display())))
+    backend::load_png(path).map_err(|e| match e {
+        backend::Error::TooLarge { .. } => ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            kind: "ImageTooLarge",
+            message: e.to_string(),
+        },
+        _ => ApiError::internal(e.to_string()),
+    })
 }
 
 /// Saves `image` to `path` via a temporary file in the same folder.

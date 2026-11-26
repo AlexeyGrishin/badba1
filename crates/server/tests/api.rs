@@ -298,6 +298,49 @@ async fn wrong_json_type_is_400() {
     assert_eq!(body["error"], "BadValue");
 }
 
+/// A PNG with a signature, an IHDR chunk declaring `width`×`height` and an
+/// empty IDAT chunk: enough to read the size, with no pixel data.
+fn header_only_png(width: u32, height: u32) -> Vec<u8> {
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &b in data {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+    let mut ihdr = b"IHDR".to_vec();
+    ihdr.extend(width.to_be_bytes());
+    ihdr.extend(height.to_be_bytes());
+    ihdr.extend([8, 6, 0, 0, 0]);
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend(13u32.to_be_bytes());
+    png.extend(&ihdr);
+    png.extend(crc32(&ihdr).to_be_bytes());
+    png.extend(0u32.to_be_bytes());
+    png.extend(b"IDAT");
+    png.extend(crc32(b"IDAT").to_be_bytes());
+    png
+}
+
+#[tokio::test]
+async fn too_large_database_is_500_image_too_large() {
+    let dir = db_dir();
+    std::fs::write(dir.join("huge.png"), header_only_png(20001, 20000)).unwrap();
+    let (status, body) = get(&dir, "/api/dbs/huge/records").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["error"], "ImageTooLarge");
+    let message = body["message"].as_str().unwrap();
+    assert!(message.contains("20001x20000"), "{message}");
+    assert!(message.contains("400000000"), "{message}");
+}
+
 // Web page
 
 #[tokio::test]

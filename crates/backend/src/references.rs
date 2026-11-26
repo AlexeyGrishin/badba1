@@ -1,7 +1,7 @@
 //! References: `ref` fields point to another record along a line drawn in the
 //! mark's color.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use image::RgbaImage;
 
@@ -20,13 +20,28 @@ pub const REF_REACH: u32 = 5;
 /// target is the one record, other than the field's own, with a field whose
 /// frame is within [`REF_REACH`] of the line; otherwise the reference is null.
 pub fn resolve(image: &RgbaImage, fields: &mut [Field], records: &[Record]) {
-    if !fields
+    if has_refs(fields) {
+        let grid = FieldMap::new(image.width(), image.height(), fields);
+        resolve_with(image, fields, records, &grid);
+    }
+}
+
+fn has_refs(fields: &[Field]) -> bool {
+    fields
         .iter()
         .any(|f| matches!(f.data, FieldData::Ref { .. }))
-    {
+}
+
+/// Like [`resolve`], with a [`FieldMap`] already built for `fields`.
+pub(crate) fn resolve_with(
+    image: &RgbaImage,
+    fields: &mut [Field],
+    records: &[Record],
+    grid: &FieldMap,
+) {
+    if !has_refs(fields) {
         return;
     }
-    let grid = Grid::new(image, fields);
     let mut record_of = vec![0; fields.len() + 1];
     for r in records {
         for &id in &r.fields {
@@ -54,33 +69,37 @@ pub fn resolve(image: &RgbaImage, fields: &mut [Field], records: &[Record]) {
     }
 }
 
-/// Per-pixel facts about fields, shared by all references in an image.
-struct Grid {
+/// Per-pixel facts about fields, shared by link detection and all references
+/// in an image. Uses 5 bytes per pixel.
+pub(crate) struct FieldMap {
     width: u32,
     height: u32,
     /// Whether the pixel is inside some field's outer rectangle.
     inside: Vec<bool>,
-    /// The id of the field whose frame the pixel belongs to, if any.
-    frame_owner: Vec<Option<usize>>,
+    /// The id of the field whose frame the pixel belongs to, or 0 for none.
+    /// Field ids start at 1.
+    frame_owner: Vec<u32>,
 }
 
-impl Grid {
-    fn new(image: &RgbaImage, fields: &[Field]) -> Self {
-        let (width, height) = image.dimensions();
+impl FieldMap {
+    /// Builds the map for `fields`, which must already be numbered.
+    pub(crate) fn new(width: u32, height: u32, fields: &[Field]) -> Self {
         let n = width as usize * height as usize;
-        let mut grid = Grid {
+        let mut grid = FieldMap {
             width,
             height,
             inside: vec![false; n],
-            frame_owner: vec![None; n],
+            frame_owner: vec![0; n],
         };
         for f in fields {
+            let id = u32::try_from(f.id).expect("field id fits in u32");
+            debug_assert!(id > 0, "fields must be numbered");
             for y in f.outer.top..=f.outer.bottom {
                 for x in f.outer.left..=f.outer.right {
                     let i = grid.index(x, y);
                     grid.inside[i] = true;
                     if !f.inner.contains(x, y) {
-                        grid.frame_owner[i] = Some(f.id);
+                        grid.frame_owner[i] = id;
                     }
                 }
             }
@@ -90,6 +109,14 @@ impl Grid {
 
     fn index(&self, x: u32, y: u32) -> usize {
         y as usize * self.width as usize + x as usize
+    }
+
+    /// The id of the field whose frame holds (`x`, `y`), if any.
+    pub(crate) fn frame_owner(&self, x: u32, y: u32) -> Option<usize> {
+        match self.frame_owner[self.index(x, y)] {
+            0 => None,
+            id => Some(id as usize),
+        }
     }
 
     /// The pixels within [`REF_REACH`] of (`x`, `y`), clipped to the image.
@@ -107,13 +134,14 @@ impl Grid {
     fn trace(&self, image: &RgbaImage, field: &Field, color: [u8; 4]) -> Vec<(u32, u32)> {
         let is_line =
             |x: u32, y: u32| !self.inside[self.index(x, y)] && image.get_pixel(x, y).0 == color;
-        let mut seen = vec![false; self.inside.len()];
+        // Lines are short, so a set beats a full-image buffer per field.
+        let mut seen = HashSet::new();
         let mut queue = VecDeque::new();
         if let Some(area) = mark_area(field.outer) {
             for y in area.top..=area.bottom {
                 for x in area.left..=area.right {
                     if image.get_pixel(x, y).0 == color {
-                        seen[self.index(x, y)] = true;
+                        seen.insert((x, y));
                         queue.push_back((x, y));
                     }
                 }
@@ -123,9 +151,7 @@ impl Grid {
         while let Some((x, y)) = queue.pop_front() {
             line.push((x, y));
             for (nx, ny) in self.window(x, y) {
-                let i = self.index(nx, ny);
-                if !seen[i] && is_line(nx, ny) {
-                    seen[i] = true;
+                if is_line(nx, ny) && seen.insert((nx, ny)) {
                     queue.push_back((nx, ny));
                 }
             }
@@ -138,7 +164,7 @@ impl Grid {
         let mut touched = BTreeSet::new();
         for &(x, y) in line {
             for (nx, ny) in self.window(x, y) {
-                if let Some(id) = self.frame_owner[self.index(nx, ny)] {
+                if let Some(id) = self.frame_owner(nx, ny) {
                     touched.insert(id);
                 }
             }
