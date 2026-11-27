@@ -28,7 +28,7 @@ The character at position c of `chars.txt` (counting characters, not bytes, and 
 - **THEN** both shapes read as `E`
 
 ### Requirement: Valid font
-The font SHALL have exactly one character in `chars.txt` per non-empty cell column of row 0. No glyph shape may belong to two different characters. A font that breaks either rule is rejected when it is loaded, with an error naming the problem.
+The font SHALL have exactly one character in `chars.txt` per non-empty cell column of row 0, and the row-0 cells of those characters' columns SHALL all be non-empty. No glyph shape may belong to two different characters. A font that breaks any of these rules is rejected when it is loaded, with an error naming the problem.
 
 #### Scenario: Shared shape
 - **WHEN** the same glyph shape appears in the columns of two different characters

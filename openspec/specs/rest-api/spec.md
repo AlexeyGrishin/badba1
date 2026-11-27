@@ -7,18 +7,18 @@ Defines the badba1 web server's REST API: which databases it serves and how they
 ## Requirements
 
 ### Requirement: Server startup
-The `server` binary SHALL serve the databases in a folder, `db` by default or the folder given with `--db <dir>`. It listens on `127.0.0.1` at port 8080 by default, or the port given with `--port <n>`. It exits with an error message if the folder does not exist or the port cannot be bound.
+The `server` binary SHALL serve the databases in a folder, `db` by default or the folder given with `--db <dir>`. It listens on `127.0.0.1` at port 8080 by default, or the port given with `--port <n>`. It exits with status 1 and an error message if the folder does not exist or the port cannot be bound, and with status 2 and a usage message for an unknown argument, a missing argument value or an invalid port.
 
 #### Scenario: Defaults
 - **WHEN** `server` is started with no arguments in the repository root
-- **THEN** it serves the PNG files in `db/` on `http://127.0.0.1:8080`
+- **THEN** it serves the PNG and BMP files in `db/` on `http://127.0.0.1:8080`
 
 #### Scenario: Missing folder
 - **WHEN** `server --db no-such-dir` is started
 - **THEN** it prints an error naming `no-such-dir` and exits with a non-zero status
 
 ### Requirement: Database ids
-Each file directly in the database folder whose extension is owned by a registered storage format (currently `.png` and `.bmp`) SHALL be a database whose id is the file name without its extension. Ids SHALL consist only of letters, digits, `-` and `_`. A request naming any other id, or an id with no matching file, gets a 404 response. An id with files in two or more formats is listed once, and every request to it gets a 409 response with `"error": "AmbiguousDatabase"`.
+Each file directly in the database folder whose extension, in lower case, is owned by a registered storage format (currently `.png` and `.bmp`) SHALL be a database whose id is the file name without its extension. Ids SHALL consist only of letters, digits, `-` and `_`. A request naming any other id, or an id with no matching file, gets a 404 response. An id with files in two or more formats is listed once, and every request to it gets a 409 response with `"error": "AmbiguousDatabase"`.
 
 #### Scenario: List databases
 - **WHEN** the folder holds `example1.png`, `b.png` and `notes.txt`, and a client sends `GET /api/dbs`
@@ -44,7 +44,7 @@ A record's id SHALL be the library's record id (see `library-api`): `"x/y"`, whe
 - **THEN** their ids are `"35/21"`, `"250/23"` and `"35/68"`, in that order
 
 ### Requirement: Records page
-`GET /api/dbs/{db}/records?offset=O&limit=L` SHALL return the database's records in record order, skipping the first O and returning at most L. The response includes `total` (the number of records), `offset`, `limit` and `background` (the image's top-left pixel color as `#RRGGBB`). Offset defaults to 0, and limit defaults to 20 with a maximum of 1000.
+`GET /api/dbs/{db}/records?offset=O&limit=L` SHALL return the database's records in record order, skipping the first O and returning at most L. The response includes `db` (the database id), `total` (the number of records), `offset`, `limit`, `background` (the image's top-left pixel color as `#RRGGBB`) and `records`, each with its `id` and `fields`. Offset defaults to 0, and limit defaults to 20 with a maximum of 1000.
 
 #### Scenario: Page of records
 - **WHEN** a client requests `/api/dbs/example3/records?offset=1&limit=1` for a copy of `testdata/example3.png`
@@ -79,7 +79,7 @@ Each record SHALL list its fields in record order, each with `name` (`field_0`, 
 - **THEN** the response is a 33×20 PNG, with content type `image/png`, equal to that field's data area
 
 ### Requirement: Write a field
-`PUT /api/dbs/{db}/records/{x}/{y}/fields/{i}` with a JSON body `{"value": …}` SHALL write the value into field `i` of that record. The JSON type must suit the field: a number for counter and float, `true`/`false` for bool, a string for string. `PUT …/fields/{i}/image` with a PNG body writes an image field. A successful write saves the database file, and the response is the field's JSON with the stored value.
+`PUT /api/dbs/{db}/records/{x}/{y}/fields/{i}` with a JSON body `{"value": …}` SHALL write the value into field `i` of that record. The JSON type must suit the field: a number for counter and float, `true`/`false` for bool, a string for string. `PUT …/fields/{i}/image` with a PNG body writes an image field. A field whose type cannot be written is refused before the body's value is checked. A successful write saves the database file, and the response is the field's JSON with the stored value.
 
 #### Scenario: Float stores what fits
 - **WHEN** a client sends `{"value": 33.3}` to field `2` of record `"35/21"`
@@ -95,10 +95,12 @@ Each record SHALL list its fields in record order, each with `name` (`field_0`, 
 
 ### Requirement: Error responses
 Errors SHALL be JSON `{"error": <kind>, "message": <text>}`, with the database file left unchanged:
-- 404 for an unknown database, record or field index
-- 400 for a malformed body or a value of the wrong JSON type
-- 422 for write rule violations (`FieldOverflow`, `OutOfRange`, `UnknownCharacter`, `FrameColor`, `NotWritable`, `TypeMismatch`)
+- 404 `NotFound` for an unknown database, record or field index, or for the image of a non-image field
+- 409 `AmbiguousDatabase` for an id with files in two or more formats
+- 400 `BadValue` for a malformed JSON body, a value of the wrong JSON type, or a JSON value sent to an image field; 400 `BadImage` for an image body that is not a PNG
+- 422 for write rule violations (`FieldOverflow`, `OutOfRange`, `UnknownCharacter`, `FrameColor`, `NotWritable`, `TypeMismatch`); a PNG sent to a field that is not an image field gives `TypeMismatch`
 - 500 with `"error": "ImageTooLarge"` when the database's image is larger than the maximum image size
+- 500 `Internal` for any other failure, such as a database file that cannot be read or decoded, or a write that cannot be saved
 
 #### Scenario: Overflow
 - **WHEN** a client writes `{"value": "HELLO WORLD"}` to the 40×5 string field of record `"250/23"`

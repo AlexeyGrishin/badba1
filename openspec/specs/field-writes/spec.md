@@ -18,7 +18,7 @@ The backend SHALL write a value into one field, identified by its number in the 
 - **THEN** every pixel outside the written field's data area is unchanged
 
 ### Requirement: Clear and draw colors
-A write SHALL first set every data-area pixel to the background color, which is the color of the image's top-left pixel. It then draws the new value in the field's mark color.
+A write SHALL first set every data-area pixel to the background color, which is the color of the image's top-left pixel. It then draws the new value in the field's mark color, or, for an `image` field, places the bitmap with its own colors.
 
 #### Scenario: Old content is removed
 - **WHEN** a `counter` field holding 5 dots is written with 2

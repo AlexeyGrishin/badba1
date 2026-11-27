@@ -58,7 +58,7 @@ The handle SHALL return field `i` (counting from 0 in record order) of a record,
 - **THEN** it gets a not-found error naming the record and field 9
 
 ### Requirement: Generic field values
-A field's value SHALL be one of a fixed set of value kinds that does not grow with the number of types: no value, whole number, decimal number, boolean, text, record reference (a record id, or null) and bitmap size. Each type SHALL also give its value as the text the CLI shows. Clients SHALL be able to display and convert every type's value using only the value kinds.
+A field's value SHALL be one of a fixed set of value kinds that does not grow with the number of types: no value, whole number, decimal number, boolean, text, record reference (a record number, or null; the handle gives the record's id) and bitmap size. Each type SHALL also give its value as the text the CLI shows. Clients SHALL be able to display and convert every type's value using only the value kinds.
 
 #### Scenario: Values of several types
 - **WHEN** a program reads the fields of `testdata/example1.png` and `testdata/example2.png`
@@ -87,7 +87,7 @@ The handle SHALL write a value into field `i` of a record, update the field's va
 - **THEN** it gets a FieldOverflow error, and both the handle and the file still hold the previous value
 
 ### Requirement: Database held in memory
-After `load_db`, the handle SHALL answer reads without reading the file again where its format keeps pixels in memory, and SHALL NOT see changes made to the file by other programs. A database file is read and analyzed once per `load_db` call.
+After `load_db`, the handle SHALL answer reads of records, fields and values from memory, and SHALL NOT see changes made to the file by other programs. Field images are also served from memory where the format keeps pixels in memory (PNG); a format that keeps pixels on disk (BMP) reads them from the file. A database file is read and analyzed once per `load_db` call.
 
 #### Scenario: File replaced after loading
 - **WHEN** a program loads `example3.png`, the file is then replaced by a different valid database image, and the program lists records from the same handle

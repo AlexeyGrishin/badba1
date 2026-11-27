@@ -112,7 +112,7 @@ The references in `testdata/example2.png` SHALL resolve as follows, and SHALL ke
 - **AND** the field at (213,74)–(234,93) is a `ref` with the same target
 
 ### Requirement: Ref value form
-A `ref` value's kind SHALL be a record reference: the target record, given by its number and its id, or null. Its CLI text SHALL be `ref R<number>` for a target, or `ref null`.
+A `ref` value's kind SHALL be a record reference: the target record's number, or null. The database handle gives the target record's id. Its CLI text SHALL be `ref R<number>` for a target, or `ref null`.
 
 #### Scenario: Reference with a target
 - **WHEN** a `ref` field's target is record 2, whose id is `250/23`

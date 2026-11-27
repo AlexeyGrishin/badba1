@@ -68,7 +68,7 @@ When run without exactly one path argument, `cli` SHALL print a usage message na
 - **THEN** a usage message is printed to standard error and the exit status is 2
 
 ### Requirement: File errors
-When the file cannot be read, is not a valid PNG, or is larger than the maximum image size, `cli` SHALL print an error naming the file to standard error and exit with status 1.
+When the file cannot be read, is not a valid file of its format, uses an unsupported variant of its format, or is larger than the maximum image size, `cli` SHALL print an error naming the file to standard error and exit with status 1.
 
 #### Scenario: Missing file
 - **WHEN** a user runs `cli does-not-exist.png`

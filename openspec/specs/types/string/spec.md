@@ -36,7 +36,7 @@ Each letter SHALL occupy a cell 3 pixels wide and 5 tall. In a line, the leftmos
 - **THEN** they are still read as two letters, from columns x..x+2 and x+3..x+5
 
 ### Requirement: Lines
-A line's cells SHALL all start on the same row. That row is set by letters whose ink is exactly 5 rows tall: such a letter's top row starts a line. Shorter marks such as `-` belong to the line whose 5 rows contain them. Letters starting on a different row form a different line, and a field may hold several lines.
+A line's cells SHALL all start on the same row. That row is set by letters whose ink is exactly 5 rows tall: such a letter's top row starts a line. Shorter marks such as `-` belong to the nearest line starting at or above them whose 5 rows contain them; a mark that no such line contains starts a line of its own at its top row. Letters starting on a different row form a different line, and a field may hold several lines.
 
 #### Scenario: Two lines
 - **WHEN** a string field holds `AB` with its top row at y=10 and `CD` with its top row at y=17

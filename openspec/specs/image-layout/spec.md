@@ -26,7 +26,7 @@ A pixel SHALL count as frame color only when its color is exactly `#BADBA1` (red
 - **THEN** it does not count as frame color
 
 ### Requirement: Field detection
-The system SHALL detect as a field every rectangular region of non-frame pixels that is completely surrounded by a frame-color frame. The frame's outer edge must also be a rectangle, and the frame must be at least 1 pixel thick on each side. Field size and the thickness of each side may be any value and may differ from side to side.
+The system SHALL detect as a field every rectangular region of non-frame pixels that is completely surrounded by a frame-color frame. The region must not touch the image's edge. The frame's outer edge must also be a rectangle, and the frame must be at least 1 pixel thick on each side. Field size and the thickness of each side may be any value and may differ from side to side.
 
 #### Scenario: Square frame with equal borders
 - **WHEN** the image contains a 40×30 frame-color rectangle with a 5-pixel border on every side around a white interior
@@ -63,7 +63,7 @@ Each field SHALL be reported with a number, its outer rectangle, its data-area r
 - **THEN** A is field 1 and B is field 2
 
 ### Requirement: Link detection
-Frame-color pixels that do not belong to any field's frame form strokes, where a stroke is a group of such pixels connected horizontally, vertically or diagonally. The system SHALL report a link for every stroke that touches the frames of two or more different fields, listing those fields. A stroke of any width, shape or curvature qualifies.
+Frame-color pixels that do not belong to any field's frame form strokes, where a stroke is a group of such pixels connected horizontally, vertically or diagonally. The system SHALL report a link for every stroke that touches the frames of two or more different fields, listing those fields in ascending order. A stroke of any width, shape or curvature qualifies. Links are numbered from 1 in order of their field lists.
 
 #### Scenario: Straight thin link
 - **WHEN** a 1-pixel-wide straight line joins the frame of field 1 to the frame of field 2

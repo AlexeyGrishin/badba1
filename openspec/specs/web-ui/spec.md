@@ -7,7 +7,7 @@ Defines the browser page the badba1 server provides for viewing a database's rec
 ## Requirements
 
 ### Requirement: Page and navigation
-The server SHALL serve a web page at `/` that lists the available databases, shows the records of the selected one a page at a time, and offers previous/next paging over the records API.
+The server SHALL serve a web page at `/` that lists the available databases, shows the records of the selected one a page at a time, and offers previous/next paging over the records API, with a page size of 10, 20 (the default) or 50 records.
 
 #### Scenario: Open the page
 - **WHEN** a user opens `http://127.0.0.1:8080/` with databases in the folder
@@ -25,7 +25,7 @@ Each record SHALL be shown as in the mockup: an opening brace, `id: "x/y",`, one
 - **THEN** it reads `{`, `id: "35/21",`, then `field_0:` with its image, `field_1:` with the counter, `field_2:` with the float and `%`, `field_3: &"250/23",`, and `}`
 
 ### Requirement: Editing scalar fields
-Counter, float, bool and string fields SHALL be editable in place: a number input (counter), a number input followed by `%` (float), a checkbox (bool), and a text input (string). A change is sent to the write API right away. The editor then shows the value the API returns. On an error, the editor shows the error message and returns to the last stored value.
+Counter, float, bool and string fields SHALL be editable in place: a number input (counter), a number input followed by `%` (float), a checkbox (bool), and a text input (string; a multi-line text area when the value has several lines). String input is shown and sent in upper case. A change is sent to the write API right away. The editor then shows the value the API returns. On an error, the editor shows the error message and returns to the last stored value.
 
 #### Scenario: Float shows the stored value
 - **WHEN** the user enters 33.3 in a float field of a 532-pixel data area
