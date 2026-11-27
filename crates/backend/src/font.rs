@@ -38,11 +38,24 @@ pub enum FontError {
     /// The font image is not a valid PNG.
     Decode(String),
     /// `chars.txt` and the non-empty cells of row 0 differ in number.
-    CountMismatch { chars: usize, cells: usize },
+    CountMismatch {
+        /// Characters in `chars.txt`.
+        chars: usize,
+        /// Non-empty cells in row 0.
+        cells: usize,
+    },
     /// A row-0 cell before the last character's column is empty.
-    EmptyMainCell { column: usize },
+    EmptyMainCell {
+        /// The empty cell's column.
+        column: usize,
+    },
     /// The same shape belongs to two different characters.
-    SharedShape { first: char, second: char },
+    SharedShape {
+        /// The first character with the shape.
+        first: char,
+        /// The second character with the shape.
+        second: char,
+    },
 }
 
 impl fmt::Display for FontError {

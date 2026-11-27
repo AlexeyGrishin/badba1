@@ -1,10 +1,17 @@
-# strings Specification
+# types/string Specification
 
 ## Purpose
 
-Defines how the text of a `string` field is read from its data area: which pixels are ink, how letters and lines are found, how letters are matched against the glyph font, and how spaces and unknown letters appear in the value.
+Defines the `string` data type: its type mark, how text is read from the data area with the glyph font (ink, letter cells, lines, glyph matching, spaces), how the value is shown, and how text is written and when a write fails.
 
 ## Requirements
+
+### Requirement: String mark
+A field's type SHALL be `string` when its mark shape is `.#.` / `#.#` / `#.#` (rows top to bottom, `#` = mark color).
+
+#### Scenario: String mark
+- **WHEN** the mark area holds black (0,0,0) pixels in the shape `.#.` / `#.#` / `#.#`, and white pixels elsewhere
+- **THEN** the field's type is `string` and its mark color is (0,0,0)
 
 ### Requirement: Background and ink
 The background color SHALL be the color of the whole image's top-left pixel. Inside a `string` field's data area, every pixel of another color is ink, whatever its color. Letters may use different colors.
@@ -94,3 +101,40 @@ The string field of `testdata/example3.png` SHALL read as follows, and SHALL kee
 #### Scenario: example3.png string field
 - **WHEN** `testdata/example3.png` is analyzed
 - **THEN** the field at (297,54)–(338,60) is a `string` with text `OPENSPEC`
+
+### Requirement: String value form
+A `string` value's kind SHALL be text. Its CLI text SHALL be `string` followed by the text in double quotes, with line breaks shown as `\n`.
+
+#### Scenario: Reference string text
+- **WHEN** the field at (297,54)–(338,60) of `testdata/example3.png` is read
+- **THEN** its value is the text `OPENSPEC`, and its CLI text is `string "OPENSPEC"`
+
+### Requirement: String writes
+Writing text to a `string` field SHALL draw each character's main glyph form in the mark color. It starts at the data area's top-left, leaving one empty column between letters. A space adds 3 empty columns, and a line break moves to the left edge, 6 rows lower. Text never wraps.
+
+#### Scenario: One line
+- **WHEN** `HELLO` is written to a `string` field with a 40×5 data area
+- **THEN** the letters start at columns 0, 4, 8, 12 and 16 of the data area, and the field reads as `HELLO`
+
+#### Scenario: Space
+- **WHEN** `A B` is written
+- **THEN** there are 4 empty columns between `A` and `B`, and the field reads as `A B`
+
+#### Scenario: Two lines
+- **WHEN** `AB\nCD` is written to a `string` field whose data area is at least 11 rows tall
+- **THEN** `CD` starts at the data area's left edge, 6 rows below `AB`, and the field reads as `AB\nCD`
+
+### Requirement: String write errors
+A string write SHALL fail with **UnknownCharacter** when the text holds a character that is neither in the glyph font nor a space or line break. It fails with **FieldOverflow** when a letter would extend past the data area's right or bottom edge.
+
+#### Scenario: Unknown character
+- **WHEN** `Hi` is written (lowercase `i` is not in the font)
+- **THEN** the write fails with UnknownCharacter naming `i`, and the image is unchanged
+
+#### Scenario: Too wide
+- **WHEN** `HELLO WORLD` is written to a `string` field with a 40×5 data area
+- **THEN** the write fails with FieldOverflow, because the last letter would cover columns 39–41 of a data area whose columns are 0–39
+
+#### Scenario: Too tall
+- **WHEN** `AB\nCD` is written to a `string` field with a 40×5 data area
+- **THEN** the write fails with FieldOverflow

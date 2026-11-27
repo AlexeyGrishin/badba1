@@ -312,9 +312,9 @@ fn main() {
     if let Some(dir) = Path::new(out).parent() {
         std::fs::create_dir_all(dir).unwrap();
     }
-    if backend::is_bmp(Path::new(out)) {
+    if backend::formats::format_for(Path::new(out)).name() == "bmp" {
         let rgba = image::DynamicImage::ImageRgb8(img).into_rgba8();
-        backend::bmp::save_bmp(Path::new(out), &rgba).unwrap();
+        backend::formats::bmp::save_bmp(Path::new(out), &rgba).unwrap();
     } else {
         img.save(out).unwrap();
     }

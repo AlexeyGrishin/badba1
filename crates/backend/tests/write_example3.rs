@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use backend::{FieldData, Layout, Rect, WriteError, WriteValue, detect, write_field};
+use backend::{Input, Layout, Rect, Value, WriteError, detect, write_field};
 use image::{Rgba, RgbaImage};
 
 fn example3() -> RgbaImage {
@@ -34,7 +34,7 @@ fn shape(layout: &Layout) -> Geometry {
 
 /// Writes `value` into field `id`, checks the layout keeps its shape and only
 /// that field's value changes, and returns the written field's new value.
-fn write_and_check(img: &mut RgbaImage, id: usize, value: WriteValue) -> FieldData {
+fn write_and_check(img: &mut RgbaImage, id: usize, value: Input) -> Value {
     let before = detect(img);
     let returned = write_field(img, &before, id, value).expect("write succeeds");
     let after = detect(img);
@@ -45,9 +45,9 @@ fn write_and_check(img: &mut RgbaImage, id: usize, value: WriteValue) -> FieldDa
     );
     for (b, a) in before.fields.iter().zip(&after.fields) {
         if a.id == id {
-            assert_eq!(a.data, returned, "F{id} reads differently than returned");
+            assert_eq!(a.value, returned, "F{id} reads differently than returned");
         } else {
-            assert_eq!(a.data, b.data, "F{} changed by writing F{id}", a.id);
+            assert_eq!(a.value, b.value, "F{} changed by writing F{id}", a.id);
         }
     }
     returned
@@ -57,30 +57,23 @@ fn write_and_check(img: &mut RgbaImage, id: usize, value: WriteValue) -> FieldDa
 fn writes_round_trip() {
     let mut img = example3();
 
-    let got = write_and_check(&mut img, 2, WriteValue::Counter(3));
-    assert!(matches!(got, FieldData::Counter { count: 3, .. }));
+    let got = write_and_check(&mut img, 2, Input::Int(3));
+    assert_eq!(got, Value::Int(3));
 
-    let got = write_and_check(&mut img, 3, WriteValue::Float(33.3));
-    assert!(matches!(
-        got,
-        FieldData::Float {
-            filled: 177,
-            total: 532,
-            ..
-        }
-    ));
+    let got = write_and_check(&mut img, 3, Input::Number(33.3));
+    assert_eq!(got, Value::Number(100.0 * 177.0 / 532.0));
 
-    let got = write_and_check(&mut img, 6, WriteValue::Bool(false));
-    assert!(matches!(got, FieldData::Bool { value: false, .. }));
+    let got = write_and_check(&mut img, 6, Input::Bool(false));
+    assert_eq!(got, Value::Bool(false));
 
-    let got = write_and_check(&mut img, 8, WriteValue::String("HELLO".into()));
-    assert!(matches!(got, FieldData::String { ref text, .. } if text == "HELLO"));
+    let got = write_and_check(&mut img, 8, Input::Text("HELLO".into()));
+    assert_eq!(got, Value::Text("HELLO".into()));
 
     let bitmap = RgbaImage::from_fn(10, 10, |x, y| {
         Rgba([(x * 20) as u8, (y * 20) as u8, 90, 255])
     });
-    let got = write_and_check(&mut img, 1, WriteValue::Image(bitmap));
-    assert_eq!(got, FieldData::Image);
+    let got = write_and_check(&mut img, 1, Input::Bitmap(bitmap));
+    assert!(matches!(got, Value::Bitmap { .. }));
 }
 
 #[test]
@@ -89,11 +82,11 @@ fn failed_writes_change_nothing() {
     let layout = detect(&img);
     let before = img.clone();
     let cases = [
-        (2, WriteValue::Counter(113)),
-        (8, WriteValue::String("HELLO WORLD".into())),
-        (5, WriteValue::Counter(1)),
-        (2, WriteValue::String("A".into())),
-        (99, WriteValue::Bool(true)),
+        (2, Input::Int(113)),
+        (8, Input::Text("HELLO WORLD".into())),
+        (5, Input::Int(1)),
+        (2, Input::Text("A".into())),
+        (99, Input::Bool(true)),
     ];
     for (id, value) in cases {
         let err = write_field(&mut img, &layout, id, value).unwrap_err();

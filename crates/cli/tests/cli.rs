@@ -126,8 +126,8 @@ fn too_large_image_is_a_file_error() {
 fn bmp_image_prints_the_same_layout() {
     let png = example1();
     let bmp = std::env::temp_dir().join(format!("badba1-cli-{}-example1.bmp", std::process::id()));
-    let image = backend::load_png(std::path::Path::new(&png)).unwrap();
-    backend::bmp::save_bmp(&bmp, &image).unwrap();
+    let image = backend::formats::read_image(std::path::Path::new(&png)).unwrap().1;
+    backend::formats::bmp::save_bmp(&bmp, &image).unwrap();
     let bmp = bmp.to_string_lossy().into_owned();
     let from_png = cli(&[&png]);
     let from_bmp = cli(&[&bmp]);

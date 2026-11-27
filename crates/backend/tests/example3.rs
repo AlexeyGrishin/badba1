@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use backend::{FieldData, Rect, analyze_png};
+use backend::{Rect, Value, load_db};
 
 fn example3() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/example3.png")
@@ -11,17 +11,14 @@ fn example3() -> PathBuf {
 
 #[test]
 fn example3_string_field() {
-    let layout = analyze_png(&example3()).expect("testdata/example3.png should load");
+    let db = load_db(example3()).expect("testdata/example3.png should load");
+    let layout = db.layout();
     let field = layout
         .fields
         .iter()
         .find(|f| f.outer == Rect::new(297, 54, 338, 60))
         .expect("string field at (297,54)-(338,60)");
-    assert_eq!(
-        field.data,
-        FieldData::String {
-            color: [0, 0, 0, 255],
-            text: "OPENSPEC".to_string()
-        }
-    );
+    assert_eq!(field.type_name(), "string");
+    assert_eq!(field.color, Some([0, 0, 0, 255]));
+    assert_eq!(field.value, Value::Text("OPENSPEC".to_string()));
 }

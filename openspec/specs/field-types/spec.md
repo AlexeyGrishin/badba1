@@ -17,39 +17,8 @@ A field's type mark SHALL be read from the 3×3 pixel area directly above the to
 - **WHEN** a field's outer top edge is at row 0, 1 or 2
 - **THEN** the field has no mark area and its type is `image`
 
-### Requirement: Mark color and shape
-The mark color SHALL be the exact color of the top-middle pixel of the mark area. The mark's shape is the set of the 9 pixels that have exactly that color. A field's type SHALL be `float` when the shape is `###` / `##.` / `#..` (rows top to bottom, `#` = mark color), `counter` for `###` / `#..` / `###`, `bool` for `.#.` / `.##` / `.##`, `ref` for `.#.` / `###` / `.#.`, and `string` for `.#.` / `#.#` / `#.#`.
-
-#### Scenario: Float mark
-- **WHEN** the mark area holds green (34,177,76) pixels in the shape `###` / `##.` / `#..`, and white pixels elsewhere
-- **THEN** the field's type is `float` and its mark color is (34,177,76)
-
-#### Scenario: Counter mark
-- **WHEN** the mark area holds red (237,28,36) pixels in the shape `###` / `#..` / `###`, and white pixels elsewhere
-- **THEN** the field's type is `counter` and its mark color is (237,28,36)
-
-#### Scenario: Bool mark
-- **WHEN** the mark area holds pink (255,174,201) pixels in the shape `.#.` / `.##` / `.##`, and white pixels elsewhere
-- **THEN** the field's type is `bool` and its mark color is (255,174,201)
-
-#### Scenario: Ref mark
-- **WHEN** the mark area holds yellow (255,201,14) pixels in the shape `.#.` / `###` / `.#.`, and white pixels elsewhere
-- **THEN** the field's type is `ref` and its mark color is (255,201,14)
-
-#### Scenario: String mark
-- **WHEN** the mark area holds black (0,0,0) pixels in the shape `.#.` / `#.#` / `#.#`, and white pixels elsewhere
-- **THEN** the field's type is `string` and its mark color is (0,0,0)
-
-#### Scenario: Other pixels are not the mark color
-- **WHEN** the mark area holds a green `float` shape and the remaining pixels are a mix of white and black
-- **THEN** the field's type is `float`
-
-#### Scenario: Top-left pixel in another color
-- **WHEN** the mark area holds a pink `bool` shape and its top-left pixel is black
-- **THEN** the field's type is `bool` and its mark color is pink
-
 ### Requirement: Default type is image
-A field's type SHALL be `image` when its mark area has no pixels, holds one color only, holds a shape other than the `float`, `counter`, `bool`, `ref` and `string` shapes, or uses the frame color `#BADBA1` as its mark color. An `image` field has no value.
+A field's type SHALL be `image` when its mark area has no pixels, holds one color only, holds a shape that no registered type owns, or uses the frame color `#BADBA1` as its mark color. An `image` field has no value.
 
 #### Scenario: No mark
 - **WHEN** the mark area is all white
@@ -67,36 +36,6 @@ A field's type SHALL be `image` when its mark area has no pixels, holds one colo
 - **WHEN** the mark area holds the `float` shape in the frame color
 - **THEN** the field's type is `image`
 
-### Requirement: Float value
-The value of a `float` field SHALL be the percentage of the data area's pixels that are exactly the mark color, from 0 to 100. Pixels of every other color count as empty.
-
-#### Scenario: Partly filled area
-- **WHEN** a `float` field with a green mark has a 10×10 data area in which 25 pixels are green, 10 are black and the rest are white
-- **THEN** its value is 25%
-
-#### Scenario: Empty and full areas
-- **WHEN** a `float` field's data area has no pixels of the mark color, or only pixels of the mark color
-- **THEN** its value is 0% or 100%, respectively
-
-### Requirement: Counter value
-The value of a `counter` field SHALL be the number of separate objects in its data area. An object is a group of mark-color pixels connected horizontally or vertically. Pixels that touch only diagonally belong to different objects. Pixels of every other color count as empty.
-
-#### Scenario: Separate dots
-- **WHEN** a `counter` field with a red mark has 3 separate red blobs in its data area
-- **THEN** its value is 3
-
-#### Scenario: Diagonal contact does not join
-- **WHEN** two red pixels in a `counter` field's data area touch only at a corner
-- **THEN** they count as 2 objects
-
-#### Scenario: Other colors do not count
-- **WHEN** a `counter` field with a red mark has 2 red blobs and 4 blue blobs in its data area
-- **THEN** its value is 2
-
-#### Scenario: Empty area
-- **WHEN** a `counter` field's data area has no pixels of the mark color
-- **THEN** its value is 0
-
 ### Requirement: Reference image types
 The fields of `testdata/example1.png` SHALL have these types and values, and SHALL keep them as the detection evolves.
 
@@ -107,25 +46,6 @@ The fields of `testdata/example1.png` SHALL have these types and values, and SHA
 - **AND** the field at (130,69)–(167,97) is a `counter` with value 3
 - **AND** the fields at (35,23)–(77,52) and (72,70)–(107,97) are `image`
 
-### Requirement: Bool value
-The value of a `bool` field SHALL be true when at least one pixel of its data area is exactly the mark color, and false when none is. Pixels of every other color count as empty.
-
-#### Scenario: One pixel makes it true
-- **WHEN** a `bool` field with a pink mark has exactly one pink pixel in its data area
-- **THEN** its value is true
-
-#### Scenario: Filled area
-- **WHEN** a `bool` field's data area holds a pink drawing of many pixels
-- **THEN** its value is true
-
-#### Scenario: Other colors only
-- **WHEN** a `bool` field with a pink mark has black and red pixels in its data area, but no pink ones
-- **THEN** its value is false
-
-#### Scenario: Empty area
-- **WHEN** a `bool` field's data area is all white
-- **THEN** its value is false
-
 ### Requirement: Second reference image types
 The bool fields of `testdata/example2.png` SHALL have these values, and SHALL keep them as the detection evolves.
 
@@ -134,9 +54,34 @@ The bool fields of `testdata/example2.png` SHALL have these values, and SHALL ke
 - **THEN** the field with outer rectangle (310,29)–(327,49) is a `bool` with value true
 - **AND** the field at (288,31)–(305,49) is a `bool` with value false
 
-### Requirement: Ref data area is ignored
-The data area of a `ref` field SHALL have no meaning: whatever is drawn in it does not affect the field's type or reference.
+### Requirement: Registered field types
+The library SHALL keep a list of registered field types, currently `image`, `float`, `counter`, `bool`, `ref` and `string`. Each type SHALL have a name, its mark shape (except `image`, which has none), how its value is read, its value form, and how a value is written or that it cannot be written. Each type's behavior is defined in its own spec, `types/<name>`.
 
-#### Scenario: Drawing inside a ref field
-- **WHEN** a `ref` field with a yellow mark has yellow and black pixels in its data area
-- **THEN** it is still a `ref` field, and its reference is the same as with an empty data area
+#### Scenario: Types of the library
+- **WHEN** a program asks the library for its registered field types
+- **THEN** it gets `image`, `float`, `counter`, `bool`, `ref` and `string`, each with its name and mark shape
+
+### Requirement: Distinct mark shapes
+No two registered types SHALL have the same mark shape, so a mark always selects at most one type. Every mark shape SHALL include the top-middle pixel, from which the mark color is read.
+
+#### Scenario: Shapes are unique
+- **WHEN** the mark shapes of all registered types are compared
+- **THEN** every shape differs from every other one, and each includes the top-middle pixel
+
+### Requirement: One module and one spec per type
+Each field type SHALL be defined in its own spec, `types/<name>`, and implemented in its own module under the library's `types` folder, holding its mark shape, value reading, value form and writing. Adding a type SHALL need only a new spec, a new module, and one entry in the type list; no other module of the library, the CLI or the server SHALL name a specific type. (The web UI's per-type editors are outside this rule.)
+
+#### Scenario: Type knowledge stays in its module
+- **WHEN** the library, CLI and server sources are searched for code that handles a specific type (its mark, value, value form or writes)
+- **THEN** it is found only in that type's module, the type list, and tests
+
+### Requirement: Mark recognition
+The mark color SHALL be the exact color of the top-middle pixel of the mark area. The mark's shape is the set of the 9 pixels that have exactly that color. A field's type SHALL be the registered type whose mark shape equals the field's mark shape. Each type's shape is given in its spec under `types/`.
+
+#### Scenario: Shape selects the registered type
+- **WHEN** a field's mark area holds a color in the shape that `types/counter` defines, and white pixels elsewhere
+- **THEN** the field's type is `counter` and its mark color is that color
+
+#### Scenario: Mark color from the top-middle pixel
+- **WHEN** a field's mark area holds a red shape and its top-middle pixel is red
+- **THEN** the mark color is red, and only the red pixels form the shape

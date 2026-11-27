@@ -1,28 +1,26 @@
 //! Reading the text of `string` fields.
 //!
-//! Ink is every data-area pixel whose color differs from the image's top-left
-//! pixel. Letters are 3×5 cells matched exactly against the glyph [`Font`].
+//! Ink is every data-area pixel whose color differs from the background (the
+//! image's top-left pixel). Letters are 3×5 cells matched exactly against the glyph [`Font`].
 //! A line's top row comes from letters whose ink is exactly 5 rows tall;
 //! shorter marks join the line whose rows contain them.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use image::RgbaImage;
-
 use crate::font::{Font, GLYPH_HEIGHT, GLYPH_WIDTH, glyph_bit};
-use crate::layout::Rect;
+use crate::types::AreaView;
 
 /// The character for a letter cell that matches no glyph in the font.
 pub const UNKNOWN_GLYPH: char = '\u{FFFD}';
 
-/// Reads the text written in `area` of `image`, using `font`. Lines are
-/// ordered top to bottom (then left to right) and joined with `\n`.
-pub fn read_text(image: &RgbaImage, area: Rect, font: &Font) -> String {
-    let background = *image.get_pixel(0, 0);
+/// Reads the text written in `area`, using `font`. Lines are ordered top to
+/// bottom (then left to right) and joined with `\n`.
+pub(crate) fn read_text(area: &AreaView<'_>, font: &Font) -> String {
+    let background = area.background();
     let (w, h) = (area.width() as usize, area.height() as usize);
     let ink: Vec<bool> = (0..h)
         .flat_map(|y| (0..w).map(move |x| (x, y)))
-        .map(|(x, y)| *image.get_pixel(area.left + x as u32, area.top + y as u32) != background)
+        .map(|(x, y)| area.get(x as u32, y as u32) != background)
         .collect();
 
     // 8-connected ink components, with bounding rows.
@@ -125,6 +123,8 @@ pub fn read_text(image: &RgbaImage, area: Rect, font: &Font) -> String {
 mod tests {
     use super::*;
     use crate::font::builtin;
+    use crate::layout::Rect;
+    use image::RgbaImage;
     use crate::font::tests::mask;
     use image::Rgba;
 
@@ -176,7 +176,7 @@ mod tests {
     }
 
     fn read(img: &RgbaImage) -> String {
-        read_text(img, AREA, builtin())
+        read_text(&AreaView::new(img, AREA, img.get_pixel(0, 0).0), builtin())
     }
 
     #[test]

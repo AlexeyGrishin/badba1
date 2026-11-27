@@ -12,8 +12,9 @@ use std::collections::{BTreeSet, VecDeque};
 
 use image::{Rgba, RgbaImage};
 
-use crate::layout::{Borders, Field, FieldData, Layout, Link, Rect};
-use crate::references::FieldMap;
+use crate::field_map::FieldMap;
+use crate::layout::{Borders, Field, Layout, Link, Rect};
+use crate::types::{ResolveCtx, TYPES, Value};
 
 /// The frame color, `#BADBA1`, fully opaque. Only exact matches count.
 pub const FRAME_COLOR: Rgba<u8> = Rgba([0xBA, 0xDB, 0xA1, 0xFF]);
@@ -43,14 +44,21 @@ pub fn detect(image: &RgbaImage) -> Layout {
     fields.sort_by_key(|f| (f.outer.top, f.outer.left));
     for (i, field) in fields.iter_mut().enumerate() {
         field.id = i + 1;
-        field.data = crate::types::read_data(image, field);
+        crate::types::read_field(image, field);
     }
     let map = FieldMap::new(width, height, &fields);
     let links = find_links(&grid, &map);
     // Free the mask before resolving references; large images need the room.
     drop(grid);
     let records = crate::records::records(&fields, &links);
-    crate::references::resolve_with(image, &mut fields, &records, &map);
+    let ctx = ResolveCtx {
+        image,
+        records: &records,
+        map: &map,
+    };
+    for t in TYPES {
+        t.resolve(&ctx, &mut fields);
+    }
     Layout {
         width,
         height,
@@ -206,7 +214,12 @@ fn frame_around(grid: &Grid, inner: Rect) -> Option<Field> {
         outer,
         inner,
         borders,
-        data: FieldData::Image,
+        kind: TYPES[0],
+        color: None,
+        value: Value::Bitmap {
+            width: inner.width(),
+            height: inner.height(),
+        },
     })
 }
 

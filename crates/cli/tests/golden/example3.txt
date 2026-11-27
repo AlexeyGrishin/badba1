@@ -1,0 +1,26 @@
+exit 0
+<path>: 539x348, 11 fields, 7 links, 3 records
+Fields:
+  F1  outer (35,21)-(77,50) 43x30  border t5 r5 b5 l5  data (40,26)-(72,45) 33x20  image
+  F2  outer (101,22)-(137,47) 37x26  border t5 r5 b5 l5  data (106,27)-(132,42) 27x16  counter 4
+  F3  outer (156,22)-(193,50) 38x29  border t5 r5 b5 l5  data (161,27)-(188,45) 28x19  float 43.42%
+  F4  outer (250,23)-(280,52) 31x30  border t5 r5 b5 l5  data (255,28)-(275,47) 21x20  image
+  F5  outer (198,26)-(220,43) 23x18  border t5 r5 b5 l5  data (203,31)-(215,38) 13x8  ref R2
+  F6  outer (310,29)-(327,49) 18x21  border t5 r5 b5 l5  data (315,34)-(322,44) 8x11  bool true
+  F7  outer (288,31)-(305,49) 18x19  border t5 r5 b5 l5  data (293,36)-(300,44) 8x9  bool false
+  F8  outer (297,54)-(338,60) 42x7  border t1 r1 b1 l1  data (298,55)-(337,59) 40x5  string "OPENSPEC"
+  F9  outer (35,68)-(70,95) 36x28  border t5 r5 b5 l5  data (40,73)-(65,90) 26x18  image
+  F10  outer (130,69)-(167,97) 38x29  border t5 r5 b5 l5  data (135,74)-(162,92) 28x19  counter 3
+  F11  outer (213,74)-(234,93) 22x20  border t5 r5 b5 l5  data (218,79)-(229,88) 12x10  ref R2
+Links:
+  L1  F1 - F2
+  L2  F2 - F3
+  L3  F3 - F5
+  L4  F4 - F7
+  L5  F6 - F7
+  L6  F6 - F8
+  L7  F9 - F10 - F11
+Records:
+  R1  F1, F2, F3, F5
+  R2  F4, F7, F6, F8
+  R3  F9, F10, F11

@@ -1,0 +1,2 @@
+exit 1
+error: cannot decode <path> as BMP: missing BM signature

@@ -1,10 +1,24 @@
-# references Specification
+# Spec Delta
 
 ## Purpose
 
-Defines how a `ref` field points to another record: the line drawn from its `+` mark in the mark's color, how gaps in that line are tolerated, which record the line reaches, and when the reference is null.
+Defines the `ref` data type: its `+` type mark, how a reference to another record is traced along a line drawn in the mark's color, which record it targets or when it is null, how the value is shown, and that references cannot be written.
 
-## Requirements
+## ADDED Requirements
+
+### Requirement: Ref mark
+A field's type SHALL be `ref` when its mark shape is `.#.` / `###` / `.#.` (rows top to bottom, `#` = mark color).
+
+#### Scenario: Ref mark
+- **WHEN** the mark area holds yellow (255,201,14) pixels in the shape `.#.` / `###` / `.#.`, and white pixels elsewhere
+- **THEN** the field's type is `ref` and its mark color is (255,201,14)
+
+### Requirement: Ref data area is ignored
+The data area of a `ref` field SHALL have no meaning: whatever is drawn in it does not affect the field's type or reference.
+
+#### Scenario: Drawing inside a ref field
+- **WHEN** a `ref` field with a yellow mark has yellow and black pixels in its data area
+- **THEN** it is still a `ref` field, and its reference is the same as with an empty data area
 
 ### Requirement: Reference line pixels
 A `ref` field's line SHALL consist of pixels that are exactly the field's mark color and lie outside the outer rectangle of every field. The mark's own pixels are where the line starts.
@@ -96,3 +110,21 @@ The references in `testdata/example2.png` SHALL resolve as follows, and SHALL ke
 - **WHEN** `testdata/example2.png` is analyzed
 - **THEN** the field at (198,26)–(220,43) is a `ref` whose target is the record containing the field at (250,23)–(280,52)
 - **AND** the field at (213,74)–(234,93) is a `ref` with the same target
+
+### Requirement: Ref value form
+A `ref` value's kind SHALL be a record reference: the target record, given by its number and its id, or null. Its CLI text SHALL be `ref R<number>` for a target, or `ref null`.
+
+#### Scenario: Reference with a target
+- **WHEN** a `ref` field's target is record 2, whose id is `250/23`
+- **THEN** its value is a reference to record 2 with id `250/23`, and its CLI text is `ref R2`
+
+#### Scenario: Null reference text
+- **WHEN** a `ref` field's reference is null
+- **THEN** its value is a null reference, and its CLI text is `ref null`
+
+### Requirement: References are not writable
+A write to a `ref` field SHALL fail with an error saying the field is not writable, whatever the value, and leave the image unchanged.
+
+#### Scenario: Reference field
+- **WHEN** any value is written to a `ref` field
+- **THEN** the write fails with an error saying the field is not writable

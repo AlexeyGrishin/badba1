@@ -1,0 +1,12 @@
+GET /api/dbs
+  200 OK application/json
+  {"dbs":["example1"]}
+GET /api/dbs/example1/records
+  409 Conflict application/json
+  {"error":"AmbiguousDatabase","message":"database \"example1\" exists as both example1.png and example1.bmp"}
+GET /api/dbs/notes/records
+  404 Not Found application/json
+  {"error":"NotFound","message":"no database \"notes\""}
+GET /api/dbs/..%2Fsecret/records
+  404 Not Found application/json
+  {"error":"NotFound","message":"no database \"../secret\""}

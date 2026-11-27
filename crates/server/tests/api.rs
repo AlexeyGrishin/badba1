@@ -263,16 +263,17 @@ async fn counter_write_persists_to_file() {
     let (status, body) = put_json(&dir, &format!("{R1}/fields/1"), json!({"value": 3})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["value"], 3);
-    let layout = backend::analyze_png(&dir.join("example3.png")).unwrap();
-    let f2 = layout
+    let db = backend::load_db(dir.join("example3.png")).unwrap();
+    let f2 = db
+        .layout()
         .fields
         .iter()
         .find(|f| f.outer == backend::Rect::new(101, 22, 137, 47))
         .unwrap();
-    assert!(matches!(
-        f2.data,
-        backend::FieldData::Counter { count: 3, .. }
-    ));
+    assert_eq!(
+        (f2.type_name(), &f2.value),
+        ("counter", &backend::Value::Int(3))
+    );
 }
 
 #[tokio::test]
@@ -507,8 +508,8 @@ async fn failed_save_leaves_memory_unchanged() {
 fn to_bmp(dir: &Path) -> PathBuf {
     let png = dir.join("example3.png");
     let bmp = dir.join("example3.bmp");
-    let image = backend::load_png(&png).unwrap();
-    backend::bmp::save_bmp(&bmp, &image).unwrap();
+    let image = image::open(&png).unwrap().into_rgba8();
+    backend::formats::bmp::save_bmp(&bmp, &image).unwrap();
     std::fs::remove_file(png).unwrap();
     bmp
 }
@@ -516,8 +517,8 @@ fn to_bmp(dir: &Path) -> PathBuf {
 #[tokio::test]
 async fn bmp_databases_are_listed() {
     let dir = db_dir();
-    let image = backend::load_png(&dir.join("example3.png")).unwrap();
-    backend::bmp::save_bmp(&dir.join("c.bmp"), &image).unwrap();
+    let image = image::open(dir.join("example3.png")).unwrap().into_rgba8();
+    backend::formats::bmp::save_bmp(&dir.join("c.bmp"), &image).unwrap();
     let (status, body) = get(&dir, "/api/dbs").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({ "dbs": ["c", "example3"] }));
@@ -526,8 +527,8 @@ async fn bmp_databases_are_listed() {
 #[tokio::test]
 async fn same_id_in_both_formats_is_409() {
     let dir = db_dir();
-    let image = backend::load_png(&dir.join("example3.png")).unwrap();
-    backend::bmp::save_bmp(&dir.join("example3.bmp"), &image).unwrap();
+    let image = image::open(dir.join("example3.png")).unwrap().into_rgba8();
+    backend::formats::bmp::save_bmp(&dir.join("example3.bmp"), &image).unwrap();
     let (_, body) = get(&dir, "/api/dbs").await;
     assert_eq!(body, json!({ "dbs": ["example3"] }));
     let (status, body) = get(&dir, "/api/dbs/example3/records").await;
@@ -569,17 +570,18 @@ async fn bmp_write_patches_the_file_in_place() {
     let after = std::fs::read(&path).unwrap();
     assert_eq!(after.len(), before.len());
 
-    let layout = backend::analyze_image(&path).unwrap();
-    let field = layout
+    let db = backend::load_db(&path).unwrap();
+    let field = db
+        .layout()
         .fields
         .iter()
         .find(|f| f.outer == backend::Rect::new(101, 22, 137, 47))
         .unwrap();
-    assert!(matches!(
-        field.data,
-        backend::FieldData::Counter { count: 5, .. }
-    ));
-    let info = backend::bmp::read_info(&path).unwrap();
+    assert_eq!(
+        (field.type_name(), &field.value),
+        ("counter", &backend::Value::Int(5))
+    );
+    let info = backend::formats::bmp::read_info(&path).unwrap();
     let bpp = u64::from(info.bytes_per_pixel);
     let inner = field.inner;
     let in_data_area = |i: u64| {

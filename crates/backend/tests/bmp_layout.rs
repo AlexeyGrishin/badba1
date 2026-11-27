@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use backend::bmp::encode_bmp;
+use backend::formats::bmp::encode_bmp;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,15 +15,15 @@ fn testdata(name: &str) -> PathBuf {
 fn bmp_layouts_match_png() {
     for name in ["example1", "example2", "example3"] {
         let png = testdata(&format!("{name}.png"));
-        let want = backend::analyze_image(&png).unwrap();
-        let image = backend::load_image(&png).unwrap();
+        let want = backend::load_db(&png).unwrap().layout().clone();
+        let image = image::open(&png).unwrap().into_rgba8();
         for (bits, top_down) in [(24, false), (24, true), (32, false)] {
             let path = std::env::temp_dir().join(format!(
                 "badba1-bmp-layout-{}-{name}-{bits}-{top_down}.BMP",
                 std::process::id()
             ));
             std::fs::write(&path, encode_bmp(&image, bits, top_down)).unwrap();
-            let got = backend::analyze_image(&path);
+            let got = backend::load_db(&path).map(|db| db.layout().clone());
             std::fs::remove_file(&path).ok();
             assert_eq!(
                 got.unwrap(),
@@ -39,9 +39,9 @@ fn unsupported_and_invalid_bmps_are_errors() {
     let dir = std::env::temp_dir();
     let text = dir.join(format!("badba1-{}-text.bmp", std::process::id()));
     std::fs::write(&text, "just some text").unwrap();
-    let err = backend::analyze_image(&text).unwrap_err();
+    let err = backend::load_db(&text).unwrap_err();
     std::fs::remove_file(&text).ok();
-    assert!(matches!(err, backend::Error::NotBmp { .. }), "{err}");
+    assert!(matches!(err, backend::Error::Decode { .. }), "{err}");
     assert!(err.to_string().contains("as BMP"), "{err}");
 
     // An 8-bit palette BMP header.
@@ -56,10 +56,10 @@ fn unsupported_and_invalid_bmps_are_errors() {
     b.extend([0u8; 24]);
     let palette = dir.join(format!("badba1-{}-palette.bmp", std::process::id()));
     std::fs::write(&palette, b).unwrap();
-    let err = backend::analyze_image(&palette).unwrap_err();
+    let err = backend::load_db(&palette).unwrap_err();
     std::fs::remove_file(&palette).ok();
     assert!(
-        matches!(err, backend::Error::UnsupportedBmp { .. }),
+        matches!(err, backend::Error::Unsupported { .. }),
         "{err}"
     );
     let msg = err.to_string();

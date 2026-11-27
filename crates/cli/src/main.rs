@@ -1,12 +1,13 @@
 //! Command-line tool for inspecting badba1 database images.
 //!
 //! Usage: `cli <image.png|image.bmp>` prints the fields and links detected in
-//! the image. The format follows the file extension.
+//! the image. The format follows the file extension. The tool is a client of
+//! the `backend` library: it loads the database with [`backend::load_db`] and
+//! shows each field with the text its type gives.
 
-use std::path::Path;
 use std::process::ExitCode;
 
-use backend::{FieldData, Layout, Rect};
+use backend::{Layout, Rect};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -15,9 +16,9 @@ fn main() -> ExitCode {
         eprintln!("Shows the fields and links detected in a badba1 PNG or BMP image.");
         return ExitCode::from(2);
     };
-    match backend::analyze_image(Path::new(path)) {
-        Ok(layout) => {
-            print!("{}", render(path, &layout));
+    match backend::load_db(path) {
+        Ok(db) => {
+            print!("{}", render(path, db.layout()));
             ExitCode::SUCCESS
         }
         Err(err) => {
@@ -49,7 +50,7 @@ fn render(path: &str, layout: &Layout) -> String {
             b.bottom,
             b.left,
             rect(f.inner),
-            data(&f.data)
+            f.cli_text()
         ));
     }
     out.push_str("Links:\n");
@@ -63,21 +64,6 @@ fn render(path: &str, layout: &Layout) -> String {
         out.push_str(&format!("  R{}  {}\n", r.id, fields.join(", ")));
     }
     out
-}
-
-/// The field's type, followed by its value for `float` and `counter` fields.
-fn data(d: &FieldData) -> String {
-    match d {
-        FieldData::Image => "image".to_string(),
-        FieldData::Float { .. } => format!("float {:.2}%", d.percent().unwrap_or(0.0)),
-        FieldData::Counter { count, .. } => format!("counter {count}"),
-        FieldData::Bool { value, .. } => format!("bool {value}"),
-        FieldData::Ref {
-            record: Some(id), ..
-        } => format!("ref R{id}"),
-        FieldData::Ref { record: None, .. } => "ref null".to_string(),
-        FieldData::String { text, .. } => format!("string {text:?}"),
-    }
 }
 
 /// `(left,top)-(right,bottom) WxH`
@@ -96,7 +82,7 @@ fn rect(r: Rect) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use backend::{Borders, Field, Record};
+    use backend::{Borders, Field, Record, Value, types};
 
     #[test]
     fn no_links_prints_no_link_lines() {
@@ -113,7 +99,12 @@ mod tests {
                     bottom: 1,
                     left: 1,
                 },
-                data: FieldData::Image,
+                kind: types::TYPES[0],
+                color: None,
+                value: Value::Bitmap {
+                    width: 1,
+                    height: 1,
+                },
             }],
             links: vec![],
             records: vec![Record {
@@ -126,55 +117,5 @@ mod tests {
         assert!(text.contains("Links:\nRecords:\n"));
         assert!(text.ends_with("Records:\n  R1  F1\n"));
         assert!(text.contains("data (5,5)-(5,5) 1x1  image\n"));
-    }
-
-    #[test]
-    fn bool_fields_show_true_and_false() {
-        let pink = [255, 174, 201, 255];
-        assert_eq!(
-            data(&FieldData::Bool {
-                color: pink,
-                value: true
-            }),
-            "bool true"
-        );
-        assert_eq!(
-            data(&FieldData::Bool {
-                color: pink,
-                value: false
-            }),
-            "bool false"
-        );
-    }
-
-    #[test]
-    fn ref_fields_show_target_or_null() {
-        let yellow = [255, 201, 14, 255];
-        assert_eq!(
-            data(&FieldData::Ref {
-                color: yellow,
-                record: Some(2)
-            }),
-            "ref R2"
-        );
-        assert_eq!(
-            data(&FieldData::Ref {
-                color: yellow,
-                record: None
-            }),
-            "ref null"
-        );
-    }
-
-    #[test]
-    fn string_fields_show_quoted_text() {
-        let black = [0, 0, 0, 255];
-        let string = |text: &str| FieldData::String {
-            color: black,
-            text: text.to_string(),
-        };
-        assert_eq!(data(&string("OPENSPEC")), "string \"OPENSPEC\"");
-        assert_eq!(data(&string("AB\nCD")), "string \"AB\\nCD\"");
-        assert_eq!(data(&string("A\u{FFFD}")), "string \"A\u{FFFD}\"");
     }
 }

@@ -27,7 +27,8 @@ fn maximum_size_image_is_analyzed() {
         );
         return;
     }
-    let layout = backend::analyze_png(&path).unwrap();
+    let db = backend::load_db(&path).unwrap();
+    let layout = db.layout();
     assert_eq!((layout.width, layout.height), (10000, 40000));
     assert_eq!(
         u64::from(layout.width) * u64::from(layout.height),

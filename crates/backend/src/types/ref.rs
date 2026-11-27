@@ -1,176 +1,146 @@
-//! References: `ref` fields point to another record along a line drawn in the
-//! mark's color.
+//! The `ref` type: a reference to another record, traced along a line drawn
+//! in the mark's color. Mark `.#.` / `###` / `.#.`. The data area has no
+//! meaning, and references cannot be written.
 
 use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use image::RgbaImage;
 
-use crate::layout::{Field, FieldData, Record};
-use crate::types::mark_area;
+use super::{AreaView, FieldType, InputKind, Mark, ResolveCtx, Value, mark_area};
+use crate::field_map::FieldMap;
+use crate::layout::Field;
 
-/// How far apart (horizontally and vertically) two line pixels, or a line
-/// pixel and a frame pixel, may be and still count as connected: 5, which
-/// allows gaps of up to 4 pixels.
+/// The `ref` field type.
+pub struct Reference;
+
+/// Mark shape of a `ref` field, rows top to bottom: `.#.`, `###`, `.#.`.
+pub const REF_MARK: Mark = [
+    [false, true, false],
+    [true, true, true],
+    [false, true, false],
+];
+
+/// How far apart, in pixels along each axis, two pixels of a reference line
+/// may be and still connect, and how close a line must come to a frame to
+/// touch it: gaps of up to `REF_REACH - 1` pixels are bridged.
 pub const REF_REACH: u32 = 5;
 
-/// Fills in the target record of every `ref` field in `fields`.
-///
-/// A field's line is every pixel of exactly its mark color, outside all
-/// fields' outer rectangles, connected to the mark within [`REF_REACH`]. The
-/// target is the one record, other than the field's own, with a field whose
-/// frame is within [`REF_REACH`] of the line; otherwise the reference is null.
-pub fn resolve(image: &RgbaImage, fields: &mut [Field], records: &[Record]) {
-    if has_refs(fields) {
-        let grid = FieldMap::new(image.width(), image.height(), fields);
-        resolve_with(image, fields, records, &grid);
+impl FieldType for Reference {
+    fn name(&self) -> &'static str {
+        "ref"
+    }
+
+    fn mark(&self) -> Option<Mark> {
+        Some(REF_MARK)
+    }
+
+    /// The data area is ignored; the target is found in
+    /// [`resolve`](FieldType::resolve), once records are known.
+    fn read(&self, _area: &AreaView<'_>, _color: [u8; 4]) -> Value {
+        Value::Record(None)
+    }
+
+    /// Fills in the target record of every `ref` field.
+    ///
+    /// A field's line is every pixel of exactly its mark color, outside all
+    /// fields' outer rectangles, connected to the mark within [`REF_REACH`].
+    /// The target is the one record, other than the field's own, with a field
+    /// whose frame is within [`REF_REACH`] of the line; otherwise the
+    /// reference is null.
+    fn resolve(&self, ctx: &ResolveCtx<'_>, fields: &mut [Field]) {
+        let is_ref = |f: &Field| f.kind.name() == self.name();
+        if !fields.iter().any(is_ref) {
+            return;
+        }
+        let mut record_of = vec![0; fields.len() + 1];
+        for r in ctx.records {
+            for &id in &r.fields {
+                record_of[id] = r.id;
+            }
+        }
+        for i in 0..fields.len() {
+            if !is_ref(&fields[i]) {
+                continue;
+            }
+            let color = fields[i].mark_color();
+            let line = trace(ctx.map, ctx.image, &fields[i], color);
+            let own = record_of[fields[i].id];
+            let targets: BTreeSet<usize> = touched_fields(ctx.map, &line)
+                .into_iter()
+                .map(|id| record_of[id])
+                .filter(|&r| r != own)
+                .collect();
+            let record = if targets.len() == 1 {
+                targets.into_iter().next()
+            } else {
+                None
+            };
+            fields[i].value = Value::Record(record);
+        }
+    }
+
+    fn input_kind(&self) -> Option<InputKind> {
+        None
+    }
+
+    fn cli_text(&self, value: &Value) -> String {
+        match value {
+            Value::Record(Some(id)) => format!("ref R{id}"),
+            _ => "ref null".to_string(),
+        }
     }
 }
 
-fn has_refs(fields: &[Field]) -> bool {
-    fields
-        .iter()
-        .any(|f| matches!(f.data, FieldData::Ref { .. }))
+/// The pixels within [`REF_REACH`] of (`x`, `y`), clipped to the image.
+fn window(map: &FieldMap, x: u32, y: u32) -> impl Iterator<Item = (u32, u32)> + use<> {
+    let (w, h) = (map.width(), map.height());
+    let x0 = x.saturating_sub(REF_REACH);
+    let x1 = (x + REF_REACH).min(w - 1);
+    let y0 = y.saturating_sub(REF_REACH);
+    let y1 = (y + REF_REACH).min(h - 1);
+    (y0..=y1).flat_map(move |ny| (x0..=x1).map(move |nx| (nx, ny)))
 }
 
-/// Like [`resolve`], with a [`FieldMap`] already built for `fields`.
-pub(crate) fn resolve_with(
-    image: &RgbaImage,
-    fields: &mut [Field],
-    records: &[Record],
-    grid: &FieldMap,
-) {
-    if !has_refs(fields) {
-        return;
-    }
-    let mut record_of = vec![0; fields.len() + 1];
-    for r in records {
-        for &id in &r.fields {
-            record_of[id] = r.id;
+/// The line of a `ref` field: its mark pixels plus every pixel of `color`
+/// outside all fields that is connected to them within [`REF_REACH`].
+fn trace(map: &FieldMap, image: &RgbaImage, field: &Field, color: [u8; 4]) -> Vec<(u32, u32)> {
+    let is_line = |x: u32, y: u32| !map.is_inside(x, y) && image.get_pixel(x, y).0 == color;
+    // Lines are short, so a set beats a full-image buffer per field.
+    let mut seen = HashSet::new();
+    let mut queue = VecDeque::new();
+    if let Some(area) = mark_area(field.outer) {
+        for y in area.top..=area.bottom {
+            for x in area.left..=area.right {
+                if image.get_pixel(x, y).0 == color {
+                    seen.insert((x, y));
+                    queue.push_back((x, y));
+                }
+            }
         }
     }
-    for i in 0..fields.len() {
-        let FieldData::Ref { color, .. } = fields[i].data else {
-            continue;
-        };
-        let line = grid.trace(image, &fields[i], color);
-        let own = record_of[fields[i].id];
-        let targets: BTreeSet<usize> = grid
-            .touched_fields(&line)
-            .into_iter()
-            .map(|id| record_of[id])
-            .filter(|&r| r != own)
-            .collect();
-        let record = if targets.len() == 1 {
-            targets.into_iter().next()
-        } else {
-            None
-        };
-        fields[i].data = FieldData::Ref { color, record };
+    let mut line = Vec::new();
+    while let Some((x, y)) = queue.pop_front() {
+        line.push((x, y));
+        for (nx, ny) in window(map, x, y) {
+            if is_line(nx, ny) && seen.insert((nx, ny)) {
+                queue.push_back((nx, ny));
+            }
+        }
     }
+    line
 }
 
-/// Per-pixel facts about fields, shared by link detection and all references
-/// in an image. Uses 5 bytes per pixel.
-pub(crate) struct FieldMap {
-    width: u32,
-    height: u32,
-    /// Whether the pixel is inside some field's outer rectangle.
-    inside: Vec<bool>,
-    /// The id of the field whose frame the pixel belongs to, or 0 for none.
-    /// Field ids start at 1.
-    frame_owner: Vec<u32>,
-}
-
-impl FieldMap {
-    /// Builds the map for `fields`, which must already be numbered.
-    pub(crate) fn new(width: u32, height: u32, fields: &[Field]) -> Self {
-        let n = width as usize * height as usize;
-        let mut grid = FieldMap {
-            width,
-            height,
-            inside: vec![false; n],
-            frame_owner: vec![0; n],
-        };
-        for f in fields {
-            let id = u32::try_from(f.id).expect("field id fits in u32");
-            debug_assert!(id > 0, "fields must be numbered");
-            for y in f.outer.top..=f.outer.bottom {
-                for x in f.outer.left..=f.outer.right {
-                    let i = grid.index(x, y);
-                    grid.inside[i] = true;
-                    if !f.inner.contains(x, y) {
-                        grid.frame_owner[i] = id;
-                    }
-                }
+/// Ids of the fields whose frame is within [`REF_REACH`] of the line.
+fn touched_fields(map: &FieldMap, line: &[(u32, u32)]) -> BTreeSet<usize> {
+    let mut touched = BTreeSet::new();
+    for &(x, y) in line {
+        for (nx, ny) in window(map, x, y) {
+            if let Some(id) = map.frame_owner(nx, ny) {
+                touched.insert(id);
             }
         }
-        grid
     }
-
-    fn index(&self, x: u32, y: u32) -> usize {
-        y as usize * self.width as usize + x as usize
-    }
-
-    /// The id of the field whose frame holds (`x`, `y`), if any.
-    pub(crate) fn frame_owner(&self, x: u32, y: u32) -> Option<usize> {
-        match self.frame_owner[self.index(x, y)] {
-            0 => None,
-            id => Some(id as usize),
-        }
-    }
-
-    /// The pixels within [`REF_REACH`] of (`x`, `y`), clipped to the image.
-    fn window(&self, x: u32, y: u32) -> impl Iterator<Item = (u32, u32)> + use<> {
-        let (w, h) = (self.width, self.height);
-        let x0 = x.saturating_sub(REF_REACH);
-        let x1 = (x + REF_REACH).min(w - 1);
-        let y0 = y.saturating_sub(REF_REACH);
-        let y1 = (y + REF_REACH).min(h - 1);
-        (y0..=y1).flat_map(move |ny| (x0..=x1).map(move |nx| (nx, ny)))
-    }
-
-    /// The line of a `ref` field: its mark pixels plus every pixel of `color`
-    /// outside all fields that is connected to them within [`REF_REACH`].
-    fn trace(&self, image: &RgbaImage, field: &Field, color: [u8; 4]) -> Vec<(u32, u32)> {
-        let is_line =
-            |x: u32, y: u32| !self.inside[self.index(x, y)] && image.get_pixel(x, y).0 == color;
-        // Lines are short, so a set beats a full-image buffer per field.
-        let mut seen = HashSet::new();
-        let mut queue = VecDeque::new();
-        if let Some(area) = mark_area(field.outer) {
-            for y in area.top..=area.bottom {
-                for x in area.left..=area.right {
-                    if image.get_pixel(x, y).0 == color {
-                        seen.insert((x, y));
-                        queue.push_back((x, y));
-                    }
-                }
-            }
-        }
-        let mut line = Vec::new();
-        while let Some((x, y)) = queue.pop_front() {
-            line.push((x, y));
-            for (nx, ny) in self.window(x, y) {
-                if is_line(nx, ny) && seen.insert((nx, ny)) {
-                    queue.push_back((nx, ny));
-                }
-            }
-        }
-        line
-    }
-
-    /// Ids of the fields whose frame is within [`REF_REACH`] of the line.
-    fn touched_fields(&self, line: &[(u32, u32)]) -> BTreeSet<usize> {
-        let mut touched = BTreeSet::new();
-        for &(x, y) in line {
-            for (nx, ny) in self.window(x, y) {
-                if let Some(id) = self.frame_owner(nx, ny) {
-                    touched.insert(id);
-                }
-            }
-        }
-        touched
-    }
+    touched
 }
 
 #[cfg(test)]
@@ -179,7 +149,6 @@ mod tests {
     use crate::detect::FRAME_COLOR;
     use crate::detect::tests::{blank, fill, frame};
     use crate::layout::{Layout, Rect};
-    use crate::types::REF_MARK;
     use image::Rgba;
 
     const WHITE: Rgba<u8> = Rgba([255, 255, 255, 255]);
@@ -242,8 +211,9 @@ mod tests {
     /// The target of A's reference.
     fn target(img: &RgbaImage) -> Option<usize> {
         let layout = crate::detect(img);
-        match &layout.fields.iter().find(|f| f.outer == A).unwrap().data {
-            FieldData::Ref { record, .. } => *record,
+        let f = layout.fields.iter().find(|f| f.outer == A).unwrap();
+        match &f.value {
+            Value::Record(record) if f.type_name() == "ref" => *record,
             other => panic!("expected a ref, got {other:?}"),
         }
     }
@@ -414,5 +384,47 @@ mod tests {
         hline(&mut img, 80, 60, 79, YELLOW);
         assert_ne!(record_of_in(&img, G), record_of_in(&img, K));
         assert_eq!(target(&img), None);
+    }
+
+    // Mark, data area, value form, writes
+
+    #[test]
+    fn ref_mark() {
+        let img = crate::types::testing::field_with_mark(REF_MARK, YELLOW);
+        let f = crate::types::testing::field_of(&img);
+        assert_eq!((f.type_name(), f.color), ("ref", Some(YELLOW.0)));
+        assert_eq!(f.value, Value::Record(None));
+    }
+
+    #[test]
+    fn data_area_is_ignored() {
+        use crate::types::testing::{data_of, field_with_mark};
+        let empty = field_with_mark(REF_MARK, YELLOW);
+        let mut drawn = empty.clone();
+        fill(&mut drawn, Rect::new(15, 15, 19, 19), YELLOW);
+        fill(&mut drawn, Rect::new(20, 20, 24, 24), Rgba([0, 0, 0, 255]));
+        assert_eq!(data_of(&drawn), data_of(&empty));
+        assert_eq!(data_of(&drawn).0, "ref");
+    }
+
+    #[test]
+    fn cli_text() {
+        assert_eq!(Reference.cli_text(&Value::Record(Some(2))), "ref R2");
+        assert_eq!(Reference.cli_text(&Value::Record(None)), "ref null");
+    }
+
+    #[test]
+    fn not_writable() {
+        use crate::draw::WriteError;
+        use crate::types::Input;
+        use crate::types::testing::{fails, scene};
+        let err = fails(scene(10, 10, Some(REF_MARK)), Input::Int(1));
+        assert!(matches!(
+            err,
+            WriteError::NotWritable {
+                type_name: "ref",
+                ..
+            }
+        ));
     }
 }

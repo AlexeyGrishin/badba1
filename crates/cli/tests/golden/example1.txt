@@ -1,0 +1,15 @@
+exit 0
+<path>: 539x348, 5 fields, 3 links, 2 records
+Fields:
+  F1  outer (101,22)-(137,47) 37x26  border t5 r5 b5 l5  data (106,27)-(132,42) 27x16  counter 5
+  F2  outer (156,22)-(193,50) 38x29  border t5 r5 b5 l5  data (161,27)-(188,45) 28x19  float 36.84%
+  F3  outer (35,23)-(77,52) 43x30  border t5 r5 b5 l5  data (40,28)-(72,47) 33x20  image
+  F4  outer (130,69)-(167,97) 38x29  border t5 r5 b5 l5  data (135,74)-(162,92) 28x19  counter 3
+  F5  outer (72,70)-(107,97) 36x28  border t5 r5 b5 l5  data (77,75)-(102,92) 26x18  image
+Links:
+  L1  F1 - F2
+  L2  F1 - F3
+  L3  F4 - F5
+Records:
+  R1  F1, F2, F3
+  R2  F4, F5

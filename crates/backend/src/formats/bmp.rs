@@ -1,5 +1,8 @@
-//! Uncompressed BMP files: header parsing, whole-image reads, and reads and
-//! in-place writes of single rectangles.
+//! The BMP storage format: uncompressed BMP files, with header parsing,
+//! whole-image reads, and reads and in-place writes of single rectangles. A
+//! loaded BMP database keeps only the file's layout in memory; field pixels
+//! are read from the file's rows, and a write overwrites just the data area's
+//! bytes.
 //!
 //! Supported: 24-bit pixels (`BI_RGB`), and 32-bit pixels as `BI_RGB` or as
 //! `BI_BITFIELDS` with the standard masks (R `00FF0000`, G `0000FF00`,
@@ -10,19 +13,96 @@
 //! Every pixel row has a fixed size at a fixed offset, so any rectangle can be
 //! read or overwritten without touching the rest of the file.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 
+use super::{Format, MAX_PIXELS, Storage};
+use crate::error::Error;
 use crate::layout::Rect;
-use crate::load::{Error, MAX_PIXELS};
+
+/// The BMP format: files ending in `.bmp`.
+pub struct Bmp;
+
+impl Format for Bmp {
+    fn name(&self) -> &'static str {
+        "bmp"
+    }
+
+    fn extensions(&self) -> &'static [&'static str] {
+        &["bmp"]
+    }
+
+    fn dimensions(&self, path: &Path) -> Result<(u32, u32), Error> {
+        let info = read_info(path)?;
+        Ok((info.width, info.height))
+    }
+
+    fn read(&self, path: &Path) -> Result<RgbaImage, Error> {
+        load_bmp(path)
+    }
+
+    fn storage(&self, path: &Path, image: RgbaImage) -> Result<Box<dyn Storage>, Error> {
+        drop(image);
+        Ok(Box::new(BmpStorage {
+            path: path.to_path_buf(),
+            info: read_info(path)?,
+        }))
+    }
+}
+
+/// A loaded BMP database: the file's pixel layout. Pixels stay on disk.
+struct BmpStorage {
+    path: PathBuf,
+    info: BmpInfo,
+}
+
+impl Storage for BmpStorage {
+    fn read_rect(&self, rect: Rect) -> Result<RgbaImage, Error> {
+        File::open(&self.path)
+            .and_then(|mut file| read_rect(&mut file, &self.info, rect))
+            .map_err(|e| io_error(&self.path, e))
+    }
+
+    fn stored(&self, bitmap: &mut RgbaImage) {
+        // Without an alpha channel the file stores every pixel as opaque.
+        if !self.info.has_alpha {
+            for p in bitmap.pixels_mut() {
+                p.0[3] = 255;
+            }
+        }
+    }
+
+    fn write_rect(&mut self, rect: Rect, pixels: &RgbaImage) -> Result<(), Error> {
+        let fail = |e: io::Error| Error::Save {
+            path: self.path.clone(),
+            reason: e.to_string(),
+        };
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&self.path)
+            .map_err(fail)?;
+        let before = read_rect(&mut file, &self.info, rect).map_err(fail)?;
+        let (x, y) = (rect.left, rect.top);
+        let written = write_rect(&mut file, &self.info, x, y, pixels).and_then(|()| file.sync_data());
+        if let Err(e) = written {
+            // Best effort: put the previous bytes back.
+            let _ = write_rect(&mut file, &self.info, x, y, &before).and_then(|()| file.sync_data());
+            return Err(fail(e));
+        }
+        Ok(())
+    }
+}
 
 /// The pixel layout of a supported BMP file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BmpInfo {
+    /// Image width in pixels.
     pub width: u32,
+    /// Image height in pixels.
     pub height: u32,
     /// Whether the first stored row is the bottom one (the usual order).
     pub bottom_up: bool,
@@ -193,12 +273,14 @@ pub fn read_info(path: &Path) -> Result<BmpInfo, Error> {
         .read_to_end(&mut head)
         .map_err(|e| io_error(path, e))?;
     let info = BmpInfo::parse(&head).map_err(|e| match e {
-        HeaderError::NotBmp(reason) => Error::NotBmp {
+        HeaderError::NotBmp(reason) => Error::Decode {
             path: path.to_path_buf(),
+            format: "BMP",
             reason,
         },
-        HeaderError::Unsupported(reason) => Error::UnsupportedBmp {
+        HeaderError::Unsupported(reason) => Error::Unsupported {
             path: path.to_path_buf(),
+            format: "BMP",
             reason,
         },
     })?;
@@ -211,8 +293,9 @@ pub fn read_info(path: &Path) -> Result<BmpInfo, Error> {
     }
     let len = file.metadata().map_err(|e| io_error(path, e))?.len();
     if len < info.data_end() {
-        return Err(Error::NotBmp {
+        return Err(Error::Decode {
             path: path.to_path_buf(),
+            format: "BMP",
             reason: "pixel data is truncated".into(),
         });
     }

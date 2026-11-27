@@ -1,4 +1,5 @@
-//! Web server for badba1: a REST API over the PNG databases in a folder, and a
+//! Web server for badba1: a REST API over the databases in a folder (image files
+//! in any storage format the `backend` library supports), and a
 //! small web page for viewing and editing their records.
 
 mod api;

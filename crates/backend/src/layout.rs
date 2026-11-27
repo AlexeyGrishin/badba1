@@ -1,11 +1,17 @@
 //! Types describing the detected structure of a database image.
 
+use crate::types::{FieldType, Value};
+
 /// An axis-aligned rectangle of pixels. All four coordinates are inclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rect {
+    /// Leftmost column.
     pub left: u32,
+    /// Topmost row.
     pub top: u32,
+    /// Rightmost column.
     pub right: u32,
+    /// Bottom row.
     pub bottom: u32,
 }
 
@@ -36,17 +42,51 @@ impl Rect {
     }
 }
 
+/// The id of a record: the top-left corner (`x`, `y`) of its first field's
+/// frame. Shown and parsed as `"x/y"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RecordId {
+    /// Column of the first field's frame's left edge.
+    pub x: u32,
+    /// Row of the first field's frame's top edge.
+    pub y: u32,
+}
+
+impl std::fmt::Display for RecordId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.x, self.y)
+    }
+}
+
+impl std::str::FromStr for RecordId {
+    type Err = String;
+
+    /// Parses `"x/y"`.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bad = || format!("{s:?} is not a record id of the form x/y");
+        let (x, y) = s.split_once('/').ok_or_else(bad)?;
+        Ok(RecordId {
+            x: x.parse().map_err(|_| bad())?,
+            y: y.parse().map_err(|_| bad())?,
+        })
+    }
+}
+
 /// Thickness of a field's frame on each side, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Borders {
+    /// Rows above the data area.
     pub top: u32,
+    /// Columns right of the data area.
     pub right: u32,
+    /// Rows below the data area.
     pub bottom: u32,
+    /// Columns left of the data area.
     pub left: u32,
 }
 
 /// A data box: a rectangular data area surrounded by a frame in the frame color.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     /// Number of the field, starting at 1, in reading order.
     pub id: usize,
@@ -56,59 +96,32 @@ pub struct Field {
     pub inner: Rect,
     /// Frame thickness on each side.
     pub borders: Borders,
-    /// The field's data type and value, read from its type mark.
-    pub data: FieldData,
+    /// The field's data type, read from its type mark.
+    pub kind: &'static dyn FieldType,
+    /// The mark color; `None` for `image` fields, which have no mark.
+    pub color: Option<[u8; 4]>,
+    /// The field's value, read from its data area.
+    pub value: Value,
 }
 
-/// A field's data type and, for typed fields, its value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FieldData {
-    /// No recognized type mark: the data area is just a bitmap.
-    Image,
-    /// `filled` of the data area's `total` pixels are the mark color.
-    Float {
-        color: [u8; 4],
-        filled: u64,
-        total: u64,
-    },
-    /// The data area holds `count` separate objects in the mark color.
-    Counter { color: [u8; 4], count: u64 },
-    /// True when at least one data-area pixel is the mark color.
-    Bool { color: [u8; 4], value: bool },
-    /// A reference to another record, traced along a line in the mark color.
-    /// `record` is the target record's id, or `None` for a null reference.
-    Ref {
-        color: [u8; 4],
-        record: Option<usize>,
-    },
-    /// Text written in the data area with the glyph font; lines joined by
-    /// `\n`, unknown glyphs as `\u{FFFD}`.
-    String { color: [u8; 4], text: String },
-}
-
-impl FieldData {
-    /// The type's name: `"image"`, `"float"`, `"counter"`, `"bool"`, `"ref"`
-    /// or `"string"`.
-    pub const fn type_name(&self) -> &'static str {
-        match self {
-            FieldData::Image => "image",
-            FieldData::Float { .. } => "float",
-            FieldData::Counter { .. } => "counter",
-            FieldData::Bool { .. } => "bool",
-            FieldData::Ref { .. } => "ref",
-            FieldData::String { .. } => "string",
-        }
+impl Field {
+    /// The name of the field's type, such as `"counter"`.
+    pub fn type_name(&self) -> &'static str {
+        self.kind.name()
     }
 
-    /// For a float field, the filled share of the data area in percent (0 to 100).
-    pub fn percent(&self) -> Option<f64> {
-        match *self {
-            FieldData::Float { filled, total, .. } if total > 0 => {
-                Some(100.0 * filled as f64 / total as f64)
-            }
-            FieldData::Float { .. } => Some(0.0),
-            _ => None,
-        }
+    /// The field's type and value as the CLI shows them, such as `counter 5`.
+    pub fn cli_text(&self) -> String {
+        self.kind.cli_text(&self.value)
+    }
+
+    /// The mark color of a typed field.
+    ///
+    /// # Panics
+    ///
+    /// If the field has no mark (an `image` field).
+    pub fn mark_color(&self) -> [u8; 4] {
+        self.color.expect("typed field has a mark color")
     }
 }
 
@@ -122,7 +135,7 @@ pub struct Link {
 }
 
 /// Everything detected in one image.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
     /// Image width in pixels.
     pub width: u32,
@@ -155,68 +168,6 @@ mod tests {
         assert_eq!(r.width(), 37);
         assert_eq!(r.height(), 26);
         assert_eq!(Rect::new(5, 5, 5, 5).width(), 1);
-    }
-
-    #[test]
-    fn type_names() {
-        let c = [0, 0, 0, 255];
-        assert_eq!(FieldData::Image.type_name(), "image");
-        assert_eq!(
-            FieldData::Float {
-                color: c,
-                filled: 0,
-                total: 1
-            }
-            .type_name(),
-            "float"
-        );
-        assert_eq!(
-            FieldData::Counter { color: c, count: 0 }.type_name(),
-            "counter"
-        );
-        assert_eq!(
-            FieldData::Bool {
-                color: c,
-                value: true
-            }
-            .type_name(),
-            "bool"
-        );
-        assert_eq!(
-            FieldData::String {
-                color: c,
-                text: String::new()
-            }
-            .type_name(),
-            "string"
-        );
-        assert_eq!(
-            FieldData::Ref {
-                color: c,
-                record: None
-            }
-            .type_name(),
-            "ref"
-        );
-    }
-
-    #[test]
-    fn float_percent() {
-        let c = [0, 0, 0, 255];
-        let pct = |filled, total| {
-            FieldData::Float {
-                color: c,
-                filled,
-                total,
-            }
-            .percent()
-            .unwrap()
-        };
-        assert_eq!(pct(0, 532), 0.0);
-        assert!((pct(196, 532) - 36.842).abs() < 0.001);
-        assert_eq!(pct(532, 532), 100.0);
-        assert_eq!(FieldData::Image.percent(), None);
-        assert_eq!(FieldData::Counter { color: c, count: 3 }.percent(), None);
     }
 
     #[test]

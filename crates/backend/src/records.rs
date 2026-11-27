@@ -63,7 +63,7 @@ pub fn records(fields: &[Field], links: &[Link]) -> Vec<Record> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{Borders, FieldData, Rect};
+    use crate::layout::{Borders, Rect};
 
     /// Builds fields from named positions, numbering them the way `detect`
     /// does (by y, then x), and returns each record as a list of names.
@@ -87,7 +87,9 @@ mod tests {
                     bottom: 1,
                     left: 1,
                 },
-                data: FieldData::Image,
+                kind: crate::types::TYPES[0],
+                color: None,
+                value: crate::types::Value::Int(0),
             })
             .collect();
         let links: Vec<Link> = links
@@ -222,7 +224,9 @@ mod tests {
                     bottom: 1,
                     left: 1,
                 },
-                data: FieldData::Image,
+                kind: crate::types::TYPES[0],
+                color: None,
+                value: crate::types::Value::Int(0),
             })
             .collect();
         let links: Vec<Link> = (1..n)

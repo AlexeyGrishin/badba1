@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use backend::{Borders, FieldData, Rect, analyze_png};
+use backend::{Borders, Rect, Value, load_db};
 
 fn example1() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/example1.png")
@@ -10,7 +10,10 @@ fn example1() -> PathBuf {
 
 #[test]
 fn example1_layout() {
-    let layout = analyze_png(&example1()).expect("testdata/example1.png should load");
+    let layout = load_db(example1())
+        .expect("testdata/example1.png should load")
+        .layout()
+        .clone();
     assert_eq!((layout.width, layout.height), (539, 348));
 
     let outers: Vec<Rect> = layout.fields.iter().map(|f| f.outer).collect();
@@ -53,40 +56,45 @@ fn example1_layout() {
 
     // Data types and values, read from the 3×3 marks.
     let data = |r: Rect| {
-        layout
-            .fields
-            .iter()
-            .find(|f| f.outer == r)
-            .unwrap()
-            .data
-            .clone()
+        let f = layout.fields.iter().find(|f| f.outer == r).unwrap();
+        (f.type_name(), f.color, f.value.clone())
     };
     const GREEN: [u8; 4] = [34, 177, 76, 255];
     const RED: [u8; 4] = [237, 28, 36, 255];
     assert_eq!(
         data(Rect::new(101, 22, 137, 47)),
-        FieldData::Counter {
-            color: GREEN,
-            count: 5
-        }
+("counter", Some(GREEN), Value::Int(5))
     );
     assert_eq!(
         data(Rect::new(156, 22, 193, 50)),
-        FieldData::Float {
-            color: GREEN,
-            filled: 196,
-            total: 532
-        }
+("float", Some(GREEN), Value::Number(100.0 * 196.0 / 532.0))
     );
     assert_eq!(
         data(Rect::new(130, 69, 167, 97)),
-        FieldData::Counter {
-            color: RED,
-            count: 3
-        }
+("counter", Some(RED), Value::Int(3))
     );
-    assert_eq!(data(Rect::new(35, 23, 77, 52)), FieldData::Image);
-    assert_eq!(data(Rect::new(72, 70, 107, 97)), FieldData::Image);
+    assert_eq!(
+        data(Rect::new(35, 23, 77, 52)),
+        (
+            "image",
+            None,
+            Value::Bitmap {
+                width: 33,
+                height: 20
+            }
+        )
+    );
+    assert_eq!(
+        data(Rect::new(72, 70, 107, 97)),
+        (
+            "image",
+            None,
+            Value::Bitmap {
+                width: 26,
+                height: 18
+            }
+        )
+    );
 
     // Records: fields as outer rectangles, in record order.
     let records: Vec<Vec<Rect>> = layout

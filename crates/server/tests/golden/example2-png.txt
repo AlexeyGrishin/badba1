@@ -1,0 +1,263 @@
+GET /api/dbs
+  200 OK application/json
+  {"dbs":["example2"]}
+GET /api/dbs/example2/records?limit=1000
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example2","limit":1000,"offset":0,"records":[{"fields":[{"height":20,"name":"field_0","type":"image","width":33},{"name":"field_1","type":"counter","value":4},{"name":"field_2","type":"float","value":43.421052631578945},{"name":"field_3","type":"ref","value":"250/23"}],"id":"35/21"},{"fields":[{"height":20,"name":"field_0","type":"image","width":21},{"name":"field_1","type":"bool","value":false},{"name":"field_2","type":"bool","value":true}],"id":"250/23"},{"fields":[{"height":18,"name":"field_0","type":"image","width":26},{"name":"field_1","type":"counter","value":3},{"name":"field_2","type":"ref","value":"250/23"}],"id":"35/68"}],"total":3}
+GET /api/dbs/example2/records?offset=1&limit=1
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example2","limit":1,"offset":1,"records":[{"fields":[{"height":20,"name":"field_0","type":"image","width":21},{"name":"field_1","type":"bool","value":false},{"name":"field_2","type":"bool","value":true}],"id":"250/23"}],"total":3}
+GET /api/dbs/example2/records/1/1/fields/0/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"no record 1/1"}
+GET /api/dbs/example2/records/35/21/fields/4/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 35/21 has no field 4"}
+PUT /api/dbs/example2/records/35/21/fields/4
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 35/21 has no field 4"}
+  file 2c6d89943c2047ff (5657 bytes)
+GET /api/dbs/example2/records/35/21/fields/0/image
+  200 OK image/png
+  body 76c61382d6e35dfd (263 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 2c6d89943c2047ff (5657 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 2c6d89943c2047ff (5657 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0/image
+  200 OK application/json
+  {"height":20,"name":"field_0","type":"image","width":33}
+  file e792e954cc7943ef (10238 bytes)
+GET /api/dbs/example2/records/35/21/fields/0/image
+  200 OK image/png
+  body abf0c4a405ff76cd (211 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F1: image is 500x500, data area is 33x20"}
+  file e792e954cc7943ef (10238 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FrameColor","message":"image for field F1 has the frame color at (0,0)"}
+  file e792e954cc7943ef (10238 bytes)
+PUT /api/dbs/example2/records/35/21/fields/0/image
+  400 Bad Request application/json
+  {"error":"BadImage","message":"body is not a PNG: Format error decoding Png: Invalid PNG signature."}
+  file e792e954cc7943ef (10238 bytes)
+GET /api/dbs/example2/records/35/21/fields/1/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 1 of record 35/21 is not an image field"}
+PUT /api/dbs/example2/records/35/21/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a counter field"}
+  file e792e954cc7943ef (10238 bytes)
+PUT /api/dbs/example2/records/35/21/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"counter","value":2}
+  file a5430976e3f5326f (10090 bytes)
+PUT /api/dbs/example2/records/35/21/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"counter","value":0}
+  file b4f6f6f9ee24bf59 (10060 bytes)
+PUT /api/dbs/example2/records/35/21/fields/1
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F2: 27x16 data area holds at most 112 squares, not 100000"}
+  file b4f6f6f9ee24bf59 (10060 bytes)
+PUT /api/dbs/example2/records/35/21/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"-1 is not a valid value for a counter field"}
+  file b4f6f6f9ee24bf59 (10060 bytes)
+GET /api/dbs/example2/records/35/21/fields/2/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 2 of record 35/21 is not an image field"}
+PUT /api/dbs/example2/records/35/21/fields/2
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a float field"}
+  file b4f6f6f9ee24bf59 (10060 bytes)
+PUT /api/dbs/example2/records/35/21/fields/2
+  200 OK application/json
+  {"name":"field_2","type":"float","value":33.27067669172932}
+  file e789bfd72cf52eb8 (9980 bytes)
+PUT /api/dbs/example2/records/35/21/fields/2
+  200 OK application/json
+  {"name":"field_2","type":"float","value":100.0}
+  file de85202fdb314ccd (9960 bytes)
+PUT /api/dbs/example2/records/35/21/fields/2
+  422 Unprocessable Entity application/json
+  {"error":"OutOfRange","message":"value 100.5 for field F3 is not between 0 and 100"}
+  file de85202fdb314ccd (9960 bytes)
+GET /api/dbs/example2/records/35/21/fields/3/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 3 of record 35/21 is not an image field"}
+PUT /api/dbs/example2/records/35/21/fields/3
+  422 Unprocessable Entity application/json
+  {"error":"NotWritable","message":"field F5 is a ref field and cannot be written"}
+  file de85202fdb314ccd (9960 bytes)
+PUT /api/dbs/example2/records/35/21/fields/3
+  422 Unprocessable Entity application/json
+  {"error":"NotWritable","message":"field F5 is a ref field and cannot be written"}
+  file de85202fdb314ccd (9960 bytes)
+PUT /api/dbs/example2/records/35/21/fields/1/image
+  422 Unprocessable Entity application/json
+  {"error":"TypeMismatch","message":"field F2 is a counter field, not a image field"}
+  file de85202fdb314ccd (9960 bytes)
+GET /api/dbs/example2/records/250/23/fields/3/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 250/23 has no field 3"}
+PUT /api/dbs/example2/records/250/23/fields/3
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 250/23 has no field 3"}
+  file de85202fdb314ccd (9960 bytes)
+GET /api/dbs/example2/records/250/23/fields/0/image
+  200 OK image/png
+  body 016d40eef4837b2b (329 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file de85202fdb314ccd (9960 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file de85202fdb314ccd (9960 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0/image
+  200 OK application/json
+  {"height":20,"name":"field_0","type":"image","width":21}
+  file bc5cb3af3ad4aaea (9831 bytes)
+GET /api/dbs/example2/records/250/23/fields/0/image
+  200 OK image/png
+  body 934deeacfbae13dc (211 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F4: image is 500x500, data area is 21x20"}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FrameColor","message":"image for field F4 has the frame color at (0,0)"}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/0/image
+  400 Bad Request application/json
+  {"error":"BadImage","message":"body is not a PNG: Format error decoding Png: Invalid PNG signature."}
+  file bc5cb3af3ad4aaea (9831 bytes)
+GET /api/dbs/example2/records/250/23/fields/1/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 1 of record 250/23 is not an image field"}
+PUT /api/dbs/example2/records/250/23/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a bool field"}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"bool","value":true}
+  file e8e730fb1190b1a8 (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"bool","value":false}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"1 is not a valid value for a bool field"}
+  file bc5cb3af3ad4aaea (9831 bytes)
+GET /api/dbs/example2/records/250/23/fields/2/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 2 of record 250/23 is not an image field"}
+PUT /api/dbs/example2/records/250/23/fields/2
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a bool field"}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/2
+  200 OK application/json
+  {"name":"field_2","type":"bool","value":true}
+  file bc5cb3af3ad4aaea (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/2
+  200 OK application/json
+  {"name":"field_2","type":"bool","value":false}
+  file ccffc0a597e7e112 (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/2
+  400 Bad Request application/json
+  {"error":"BadValue","message":"1 is not a valid value for a bool field"}
+  file ccffc0a597e7e112 (9831 bytes)
+PUT /api/dbs/example2/records/250/23/fields/1/image
+  422 Unprocessable Entity application/json
+  {"error":"TypeMismatch","message":"field F7 is a bool field, not a image field"}
+  file ccffc0a597e7e112 (9831 bytes)
+GET /api/dbs/example2/records/35/68/fields/3/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 35/68 has no field 3"}
+PUT /api/dbs/example2/records/35/68/fields/3
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 35/68 has no field 3"}
+  file ccffc0a597e7e112 (9831 bytes)
+GET /api/dbs/example2/records/35/68/fields/0/image
+  200 OK image/png
+  body 8d1ae4d2e800817b (213 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file ccffc0a597e7e112 (9831 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file ccffc0a597e7e112 (9831 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0/image
+  200 OK application/json
+  {"height":18,"name":"field_0","type":"image","width":26}
+  file 9fe77b68a8bdd691 (9787 bytes)
+GET /api/dbs/example2/records/35/68/fields/0/image
+  200 OK image/png
+  body 2978fb36d864fd38 (185 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F8: image is 500x500, data area is 26x18"}
+  file 9fe77b68a8bdd691 (9787 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"FrameColor","message":"image for field F8 has the frame color at (0,0)"}
+  file 9fe77b68a8bdd691 (9787 bytes)
+PUT /api/dbs/example2/records/35/68/fields/0/image
+  400 Bad Request application/json
+  {"error":"BadImage","message":"body is not a PNG: Format error decoding Png: Invalid PNG signature."}
+  file 9fe77b68a8bdd691 (9787 bytes)
+GET /api/dbs/example2/records/35/68/fields/1/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 1 of record 35/68 is not an image field"}
+PUT /api/dbs/example2/records/35/68/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a counter field"}
+  file 9fe77b68a8bdd691 (9787 bytes)
+PUT /api/dbs/example2/records/35/68/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"counter","value":2}
+  file b727b1b3dc5dbf1c (9675 bytes)
+PUT /api/dbs/example2/records/35/68/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"counter","value":0}
+  file 8ff5b70212a901be (9649 bytes)
+PUT /api/dbs/example2/records/35/68/fields/1
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F9: 28x19 data area holds at most 140 squares, not 100000"}
+  file 8ff5b70212a901be (9649 bytes)
+PUT /api/dbs/example2/records/35/68/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"-1 is not a valid value for a counter field"}
+  file 8ff5b70212a901be (9649 bytes)
+GET /api/dbs/example2/records/35/68/fields/2/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 2 of record 35/68 is not an image field"}
+PUT /api/dbs/example2/records/35/68/fields/2
+  422 Unprocessable Entity application/json
+  {"error":"NotWritable","message":"field F10 is a ref field and cannot be written"}
+  file 8ff5b70212a901be (9649 bytes)
+PUT /api/dbs/example2/records/35/68/fields/2
+  422 Unprocessable Entity application/json
+  {"error":"NotWritable","message":"field F10 is a ref field and cannot be written"}
+  file 8ff5b70212a901be (9649 bytes)
+PUT /api/dbs/example2/records/35/68/fields/1/image
+  422 Unprocessable Entity application/json
+  {"error":"TypeMismatch","message":"field F9 is a counter field, not a image field"}
+  file 8ff5b70212a901be (9649 bytes)
+GET /api/dbs/example2/records?limit=1000
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example2","limit":1000,"offset":0,"records":[{"fields":[{"height":20,"name":"field_0","type":"image","width":33},{"name":"field_1","type":"counter","value":0},{"name":"field_2","type":"float","value":100.0},{"name":"field_3","type":"ref","value":"250/23"}],"id":"35/21"},{"fields":[{"height":20,"name":"field_0","type":"image","width":21},{"name":"field_1","type":"bool","value":false},{"name":"field_2","type":"bool","value":false}],"id":"250/23"},{"fields":[{"height":18,"name":"field_0","type":"image","width":26},{"name":"field_1","type":"counter","value":0},{"name":"field_2","type":"ref","value":"250/23"}],"id":"35/68"}],"total":3}

@@ -1,0 +1,162 @@
+GET /api/dbs
+  200 OK application/json
+  {"dbs":["example1"]}
+GET /api/dbs/example1/records?limit=1000
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example1","limit":1000,"offset":0,"records":[{"fields":[{"name":"field_0","type":"counter","value":5},{"name":"field_1","type":"float","value":36.8421052631579},{"height":20,"name":"field_2","type":"image","width":33}],"id":"101/22"},{"fields":[{"name":"field_0","type":"counter","value":3},{"height":18,"name":"field_1","type":"image","width":26}],"id":"130/69"}],"total":2}
+GET /api/dbs/example1/records?offset=1&limit=1
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example1","limit":1,"offset":1,"records":[{"fields":[{"name":"field_0","type":"counter","value":3},{"height":18,"name":"field_1","type":"image","width":26}],"id":"130/69"}],"total":2}
+GET /api/dbs/example1/records/1/1/fields/0/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"no record 1/1"}
+GET /api/dbs/example1/records/101/22/fields/3/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 101/22 has no field 3"}
+PUT /api/dbs/example1/records/101/22/fields/3
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 101/22 has no field 3"}
+  file 3f437969af50b001 (4956 bytes)
+GET /api/dbs/example1/records/101/22/fields/0/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 0 of record 101/22 is not an image field"}
+PUT /api/dbs/example1/records/101/22/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a counter field"}
+  file 3f437969af50b001 (4956 bytes)
+PUT /api/dbs/example1/records/101/22/fields/0
+  200 OK application/json
+  {"name":"field_0","type":"counter","value":2}
+  file 7f8691594601eff2 (9071 bytes)
+PUT /api/dbs/example1/records/101/22/fields/0
+  200 OK application/json
+  {"name":"field_0","type":"counter","value":0}
+  file 2b91cc9275c66c42 (9042 bytes)
+PUT /api/dbs/example1/records/101/22/fields/0
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F1: 27x16 data area holds at most 112 squares, not 100000"}
+  file 2b91cc9275c66c42 (9042 bytes)
+PUT /api/dbs/example1/records/101/22/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"-1 is not a valid value for a counter field"}
+  file 2b91cc9275c66c42 (9042 bytes)
+GET /api/dbs/example1/records/101/22/fields/1/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 1 of record 101/22 is not an image field"}
+PUT /api/dbs/example1/records/101/22/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a float field"}
+  file 2b91cc9275c66c42 (9042 bytes)
+PUT /api/dbs/example1/records/101/22/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"float","value":33.27067669172932}
+  file 44e3ff864690c80e (9011 bytes)
+PUT /api/dbs/example1/records/101/22/fields/1
+  200 OK application/json
+  {"name":"field_1","type":"float","value":100.0}
+  file 2a47906fc6c2d7d2 (8992 bytes)
+PUT /api/dbs/example1/records/101/22/fields/1
+  422 Unprocessable Entity application/json
+  {"error":"OutOfRange","message":"value 100.5 for field F2 is not between 0 and 100"}
+  file 2a47906fc6c2d7d2 (8992 bytes)
+GET /api/dbs/example1/records/101/22/fields/2/image
+  200 OK image/png
+  body 76c61382d6e35dfd (263 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 2a47906fc6c2d7d2 (8992 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 2a47906fc6c2d7d2 (8992 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2/image
+  200 OK application/json
+  {"height":20,"name":"field_2","type":"image","width":33}
+  file a72d2eedaa5abfc6 (8935 bytes)
+GET /api/dbs/example1/records/101/22/fields/2/image
+  200 OK image/png
+  body abf0c4a405ff76cd (211 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2/image
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F3: image is 500x500, data area is 33x20"}
+  file a72d2eedaa5abfc6 (8935 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2/image
+  422 Unprocessable Entity application/json
+  {"error":"FrameColor","message":"image for field F3 has the frame color at (0,0)"}
+  file a72d2eedaa5abfc6 (8935 bytes)
+PUT /api/dbs/example1/records/101/22/fields/2/image
+  400 Bad Request application/json
+  {"error":"BadImage","message":"body is not a PNG: Format error decoding Png: Invalid PNG signature."}
+  file a72d2eedaa5abfc6 (8935 bytes)
+PUT /api/dbs/example1/records/101/22/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"TypeMismatch","message":"field F1 is a counter field, not a image field"}
+  file a72d2eedaa5abfc6 (8935 bytes)
+GET /api/dbs/example1/records/130/69/fields/2/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 130/69 has no field 2"}
+PUT /api/dbs/example1/records/130/69/fields/2
+  404 Not Found application/json
+  {"error":"NotFound","message":"record 130/69 has no field 2"}
+  file a72d2eedaa5abfc6 (8935 bytes)
+GET /api/dbs/example1/records/130/69/fields/0/image
+  404 Not Found application/json
+  {"error":"NotFound","message":"field 0 of record 130/69 is not an image field"}
+PUT /api/dbs/example1/records/130/69/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"\"wrong\" is not a valid value for a counter field"}
+  file a72d2eedaa5abfc6 (8935 bytes)
+PUT /api/dbs/example1/records/130/69/fields/0
+  200 OK application/json
+  {"name":"field_0","type":"counter","value":2}
+  file 68976148340c094c (8839 bytes)
+PUT /api/dbs/example1/records/130/69/fields/0
+  200 OK application/json
+  {"name":"field_0","type":"counter","value":0}
+  file 4982ca4f6649cd08 (8814 bytes)
+PUT /api/dbs/example1/records/130/69/fields/0
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F4: 28x19 data area holds at most 140 squares, not 100000"}
+  file 4982ca4f6649cd08 (8814 bytes)
+PUT /api/dbs/example1/records/130/69/fields/0
+  400 Bad Request application/json
+  {"error":"BadValue","message":"-1 is not a valid value for a counter field"}
+  file 4982ca4f6649cd08 (8814 bytes)
+GET /api/dbs/example1/records/130/69/fields/1/image
+  200 OK image/png
+  body 8d1ae4d2e800817b (213 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 4982ca4f6649cd08 (8814 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1
+  400 Bad Request application/json
+  {"error":"BadValue","message":"image fields are not written with a JSON value"}
+  file 4982ca4f6649cd08 (8814 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1/image
+  200 OK application/json
+  {"height":18,"name":"field_1","type":"image","width":26}
+  file 3f8aaaab2d7b0017 (8774 bytes)
+GET /api/dbs/example1/records/130/69/fields/1/image
+  200 OK image/png
+  body 2978fb36d864fd38 (185 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1/image
+  422 Unprocessable Entity application/json
+  {"error":"FieldOverflow","message":"value does not fit in field F5: image is 500x500, data area is 26x18"}
+  file 3f8aaaab2d7b0017 (8774 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1/image
+  422 Unprocessable Entity application/json
+  {"error":"FrameColor","message":"image for field F5 has the frame color at (0,0)"}
+  file 3f8aaaab2d7b0017 (8774 bytes)
+PUT /api/dbs/example1/records/130/69/fields/1/image
+  400 Bad Request application/json
+  {"error":"BadImage","message":"body is not a PNG: Format error decoding Png: Invalid PNG signature."}
+  file 3f8aaaab2d7b0017 (8774 bytes)
+PUT /api/dbs/example1/records/130/69/fields/0/image
+  422 Unprocessable Entity application/json
+  {"error":"TypeMismatch","message":"field F4 is a counter field, not a image field"}
+  file 3f8aaaab2d7b0017 (8774 bytes)
+GET /api/dbs/example1/records?limit=1000
+  200 OK application/json
+  {"background":"#FFFFFF","db":"example1","limit":1000,"offset":0,"records":[{"fields":[{"name":"field_0","type":"counter","value":0},{"name":"field_1","type":"float","value":100.0},{"height":20,"name":"field_2","type":"image","width":33}],"id":"101/22"},{"fields":[{"name":"field_0","type":"counter","value":0},{"height":18,"name":"field_1","type":"image","width":26}],"id":"130/69"}],"total":2}

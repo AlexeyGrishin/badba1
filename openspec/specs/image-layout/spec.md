@@ -6,21 +6,6 @@ Detects the structure of a badba1 database image: the fields (data boxes framed 
 
 ## Requirements
 
-### Requirement: Read PNG images
-The system SHALL accept a PNG image in any standard PNG color type and bit depth, given as a file path. It SHALL report an error, and no layout, when the file cannot be read or is not a valid PNG.
-
-#### Scenario: Valid PNG is read
-- **WHEN** the system is given the path of a valid PNG file, such as `testdata/example1.png`
-- **THEN** it returns the image's layout, along with the image's width and height in pixels
-
-#### Scenario: Missing file
-- **WHEN** the system is given a path that does not exist
-- **THEN** it reports an error naming the path, and returns no layout
-
-#### Scenario: Not a PNG
-- **WHEN** the system is given a file that is not a valid PNG, such as a text file
-- **THEN** it reports an error saying the file could not be decoded as PNG, and returns no layout
-
 ### Requirement: Frame color matching
 A pixel SHALL count as frame color only when its color is exactly `#BADBA1` (red 186, green 219, blue 161) and it is fully opaque (alpha 255). There is no tolerance: every other pixel, however close in color, is background or data.
 
@@ -110,49 +95,3 @@ The detected layout of the reference image `testdata/example1.png` SHALL be 5 fi
 - **WHEN** `testdata/example1.png` (539×348) is analyzed
 - **THEN** 5 fields are reported, each with a 5-pixel border on every side, with outer rectangles (left, top, right, bottom) (101,22,137,47), (35,23,77,52), (156,22,193,50), (130,69,167,97) and (72,70,107,97)
 - **AND** 3 links are reported: between the fields at (35,23,77,52) and (101,22,137,47), between (101,22,137,47) and (156,22,193,50), and between (72,70,107,97) and (130,69,167,97)
-
-### Requirement: Maximum image size
-The system SHALL read and analyze any valid PNG of up to 400,000,000 pixels (width × height), of any shape, color type or bit depth. A PNG with more pixels SHALL be rejected, with no layout, by an error that says the image is too large and gives its dimensions and the maximum. The rejection SHALL happen before the pixel data is decoded.
-
-#### Scenario: Maximum-size image is analyzed
-- **WHEN** the system is given a 10000×40000 PNG database image, such as `db/big.png` from the `gen_big` example
-- **THEN** it returns the image's layout with width 10000 and height 40000, and every generated record is detected
-
-#### Scenario: Other shape at the maximum
-- **WHEN** the system is given a valid 20000×20000 PNG
-- **THEN** it returns the image's layout
-
-#### Scenario: One pixel over the maximum
-- **WHEN** the system is given a valid PNG with 400,000,001 or more pixels, such as 20001×20000
-- **THEN** it reports an error that says the image is too large, names the file, and gives `20001x20000` and the 400,000,000-pixel maximum. It returns no layout.
-
-#### Scenario: Too-large image is rejected quickly
-- **WHEN** the system is given a PNG whose header declares 100000×100000 pixels
-- **THEN** it reports the too-large error without allocating memory for the pixels
-
-#### Scenario: Small images are unaffected
-- **WHEN** the system is given any image it could analyze before, such as `testdata/example1.png`
-- **THEN** it returns the same layout as before
-
-### Requirement: Read BMP images
-The system SHALL accept an uncompressed BMP file, given as a file path, with 24-bit pixels or 32-bit pixels in standard byte order, stored bottom-up or top-down. It SHALL return the same layout as for the same pixels stored as PNG. 24-bit pixels and 32-bit pixels without an alpha mask count as fully opaque. Other BMP variants SHALL be rejected with an error naming the file and the unsupported format.
-
-#### Scenario: 24-bit BMP matches the PNG
-- **WHEN** `testdata/example1.png` is saved as a 24-bit bottom-up BMP and the system is given that BMP
-- **THEN** it returns the same layout as for `testdata/example1.png`: 539×348, 5 fields, 3 links and 2 records with identical rectangles and values
-
-#### Scenario: Top-down and 32-bit BMPs
-- **WHEN** the same pixels are stored as a top-down 24-bit BMP, and as a 32-bit BMP
-- **THEN** each returns the same layout as the PNG
-
-#### Scenario: Unsupported BMP
-- **WHEN** the system is given an RLE-compressed or 8-bit palette BMP
-- **THEN** it reports an error that names the file and says the BMP format is not supported, and returns no layout
-
-#### Scenario: BMP over the maximum size
-- **WHEN** the system is given a BMP whose header declares 20001×20000 pixels
-- **THEN** it reports the too-large error from the header, without reading the pixel data
-
-#### Scenario: Not a BMP
-- **WHEN** the system is given a `.bmp` file that is not a BMP, such as a text file
-- **THEN** it reports an error saying the file could not be decoded as BMP, and returns no layout
